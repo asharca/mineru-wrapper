@@ -23,41 +23,59 @@ function color(type: string): string {
 interface ImageOverlayProps {
   src: string;
   blocks: ContentBlock[];
-  pageWidth: number;
-  pageHeight: number;
   activeIndex: number | null;
   onHover: (i: number | null) => void;
   onClick: (i: number) => void;
 }
 
 function ImageOverlay({
-  src, blocks, pageWidth, pageHeight, activeIndex, onHover, onClick,
+  src, blocks, activeIndex, onHover, onClick,
 }: ImageOverlayProps) {
-  // Single SVG: image + rects share the same coordinate system — no alignment issues
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+
+  // Load real image dimensions to preserve aspect ratio
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
+    img.src = src;
+  }, [src]);
+
+  if (!imgSize) return <div className="loading">Loading image...</div>;
+
+  const { w, h } = imgSize;
+  // Scale bbox from 0-1000 normalized to real pixel coordinates
+  const sx = w / 1000;
+  const sy = h / 1000;
+  // Label size proportional to image
+  const labelW = Math.round(w * 0.02);
+  const labelH = Math.round(h * 0.02);
+  const fontSize = Math.round(Math.min(w, h) * 0.012);
+
   return (
-    <TransformWrapper minScale={0.3} maxScale={8} centerOnInit>
+    <TransformWrapper
+      minScale={0.5}
+      maxScale={8}
+      initialScale={1}
+      centerZoomedOut
+    >
       <TransformComponent
-        wrapperStyle={{ width: "100%", height: "100%" }}
+        wrapperStyle={{ width: "100%", height: "100%", overflow: "auto" }}
+        contentStyle={{ width: "100%" }}
       >
         <svg
-          viewBox={`0 0 ${pageWidth} ${pageHeight}`}
+          viewBox={`0 0 ${w} ${h}`}
           style={{ width: "100%", height: "auto", display: "block" }}
         >
-          {/* The original document as background */}
-          <image
-            href={src}
-            x={0} y={0}
-            width={pageWidth} height={pageHeight}
-            preserveAspectRatio="none"
-          />
+          <image href={src} x={0} y={0} width={w} height={h} />
 
-          {/* Bounding box overlays */}
           {blocks.map((block, i) => {
-            const [x0, y0, x1, y1] = block.bbox;
+            const [bx0, by0, bx1, by1] = block.bbox;
+            const x0 = bx0 * sx;
+            const y0 = by0 * sy;
+            const x1 = bx1 * sx;
+            const y1 = by1 * sy;
             const isActive = activeIndex === i;
             const c = color(block.type);
-            const labelW = 36;
-            const labelH = 28;
             return (
               <g
                 key={i}
@@ -70,20 +88,19 @@ function ImageOverlay({
                   x={x0} y={y0} width={x1 - x0} height={y1 - y0}
                   fill={isActive ? `${c}33` : "transparent"}
                   stroke={c}
-                  strokeWidth={isActive ? 4 : 2}
+                  strokeWidth={isActive ? 3 : 1.5}
                   strokeOpacity={isActive ? 1 : 0.5}
                   rx={2}
                 />
-                {/* Index label */}
                 <rect
                   x={x0} y={Math.max(0, y0 - labelH)}
                   width={labelW} height={labelH}
-                  fill={c} rx={4}
+                  fill={c} rx={3}
                 />
                 <text
                   x={x0 + labelW / 2}
                   y={Math.max(0, y0 - labelH) + labelH / 2}
-                  fill="white" fontSize="18" fontWeight="bold"
+                  fill="white" fontSize={fontSize} fontWeight="bold"
                   textAnchor="middle" dominantBaseline="central"
                 >
                   {i + 1}
@@ -140,7 +157,6 @@ export default function TaskDetail() {
 
   const isProcessing = task.status === "pending" || task.status === "processing";
   const blocks = (task.content_list || []).filter((b) => b.type !== "discarded");
-  const pageSize = task.pages?.[0];
   const isImage = /\.(png|jpe?g|gif|bmp|tiff)$/i.test(task.filename);
 
   return (
@@ -174,12 +190,10 @@ export default function TaskDetail() {
               <div className="pane-wrapper">
                 <div className="pane-title">Original Document</div>
                 <div className="pane-content">
-                  {isImage && pageSize ? (
+                  {isImage ? (
                     <ImageOverlay
                       src={fileUrl(task.filename)}
                       blocks={blocks}
-                      pageWidth={pageSize.width}
-                      pageHeight={pageSize.height}
                       activeIndex={activeBlock}
                       onHover={handleHover}
                       onClick={(i) => { setActiveBlock(i); scrollToBlock(i); }}
