@@ -1,29 +1,12 @@
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
+import { Upload, Loader2 } from "lucide-react";
 import { uploadFile } from "../api.ts";
-
-const BACKENDS = [
-  { value: "pipeline", label: "Pipeline (通用多语言)" },
-  { value: "vlm-auto-engine", label: "VLM Auto (中英高精度)" },
-  { value: "hybrid-auto-engine", label: "Hybrid Auto (新一代高精度)" },
-];
-
-const LANGS = [
-  { value: "ch", label: "中文/英文" },
-  { value: "en", label: "English" },
-  { value: "japan", label: "日本語" },
-  { value: "korean", label: "한국어" },
-  { value: "latin", label: "Latin languages" },
-  { value: "arabic", label: "Arabic" },
-  { value: "cyrillic", label: "Cyrillic" },
-  { value: "devanagari", label: "Devanagari" },
-];
+import { loadSettings } from "../settings.ts";
 
 export default function UploadPage() {
   const navigate = useNavigate();
-  const [backend, setBackend] = useState("pipeline");
-  const [lang, setLang] = useState("ch");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
@@ -33,7 +16,16 @@ export default function UploadPage() {
       setUploading(true);
       setError("");
       try {
-        const result = await uploadFile(files[0], { backend, lang });
+        const settings = loadSettings();
+        const result = await uploadFile(files[0], {
+          backend: settings.backend,
+          lang: settings.lang,
+          parse_method: settings.parse_method === "auto" ? undefined : settings.parse_method,
+          formula_enable: settings.formula_enable,
+          table_enable: settings.table_enable,
+          auto_rotate: settings.auto_rotate,
+          mineru_url: settings.mineru_url || undefined,
+        });
         navigate(`/task/${result.id}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed");
@@ -41,7 +33,7 @@ export default function UploadPage() {
         setUploading(false);
       }
     },
-    [backend, lang, navigate]
+    [navigate]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -55,55 +47,41 @@ export default function UploadPage() {
   });
 
   return (
-    <div className="upload-page">
-      <div className="options-bar">
-        <label>
-          <span>Backend</span>
-          <select value={backend} onChange={(e) => setBackend(e.target.value)}>
-            {BACKENDS.map((b) => (
-              <option key={b.value} value={b.value}>
-                {b.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Language</span>
-          <select value={lang} onChange={(e) => setLang(e.target.value)}>
-            {LANGS.map((l) => (
-              <option key={l.value} value={l.value}>
-                {l.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
+    <div className="max-w-2xl mx-auto mt-12">
       <div
         {...getRootProps()}
-        className={`dropzone ${isDragActive ? "active" : ""} ${uploading ? "disabled" : ""}`}
+        className={`
+          border-2 border-dashed rounded-xl p-16 text-center cursor-pointer
+          transition-all bg-white
+          ${isDragActive ? "border-primary bg-blue-50" : "border-border hover:border-primary hover:bg-blue-50/50"}
+          ${uploading ? "opacity-60 cursor-not-allowed" : ""}
+        `}
       >
         <input {...getInputProps()} />
         {uploading ? (
-          <div className="drop-content">
-            <div className="spinner" />
-            <p>Uploading & processing...</p>
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="w-10 h-10 text-primary animate-spin" />
+            <p className="text-muted-foreground">Uploading & processing...</p>
           </div>
         ) : isDragActive ? (
-          <div className="drop-content">
-            <p className="drop-icon">+</p>
-            <p>Drop file here</p>
+          <div className="flex flex-col items-center gap-3">
+            <Upload className="w-12 h-12 text-primary" />
+            <p className="text-lg font-medium">Drop file here</p>
           </div>
         ) : (
-          <div className="drop-content">
-            <p className="drop-icon">&#128196;</p>
-            <p>Drag & drop PDF or image here</p>
-            <p className="drop-hint">or click to select</p>
+          <div className="flex flex-col items-center gap-3">
+            <Upload className="w-12 h-12 text-muted-foreground" />
+            <p className="text-lg font-medium">Drag & drop PDF or image here</p>
+            <p className="text-sm text-muted-foreground">or click to select</p>
           </div>
         )}
       </div>
 
-      {error && <div className="error-msg">{error}</div>}
+      {error && (
+        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-destructive text-sm">
+          {error}
+        </div>
+      )}
     </div>
   );
 }

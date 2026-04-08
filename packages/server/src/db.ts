@@ -40,6 +40,8 @@ export interface ContentBlock {
   bbox: [number, number, number, number];
   text?: string;
   page_idx?: number;
+  img_path?: string;
+  img_data?: string;
 }
 
 export interface OcrTask {
