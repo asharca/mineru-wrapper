@@ -10,8 +10,9 @@ app.use("*", cors());
 app.route("/", routes);
 
 // Serve frontend static files in production
-app.use("/*", serveStatic({ root: "../web/dist" }));
-app.get("/*", serveStatic({ root: "../web/dist", path: "index.html" }));
+const webDistPath = process.env.WEB_DIST_PATH || "./packages/web/dist";
+app.use("/*", serveStatic({ root: webDistPath }));
+app.get("/*", serveStatic({ root: webDistPath, rewriteRequestPath: () => "/index.html" }));
 
 console.log(`OCR Server running at http://0.0.0.0:${PORT}`);
 console.log(`MineRU endpoint: ${process.env.MINERU_URL || "http://10.0.10.2:8001"}`);
