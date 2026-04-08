@@ -44,6 +44,7 @@ export interface ContentBlock {
   page_idx?: number;
   img_path?: string;
   img_url?: string;
+  table_body?: string;
 }
 
 export interface OcrTask {

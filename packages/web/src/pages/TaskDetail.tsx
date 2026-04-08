@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { Allotment } from "allotment";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { Document, Page, pdfjs } from "react-pdf";
@@ -411,15 +412,17 @@ export default function TaskDetail() {
                                 <img src={block.img_url} alt={block.img_path || "extracted image"}
                                   className="max-w-full h-auto rounded" />
                               ) : <em className="text-muted-foreground">(image region)</em>
+                            ) : block.type === "table" && block.table_body ? (
+                              <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: block.table_body }} />
                             ) : (
-                              <Markdown remarkPlugins={[remarkGfm]}>{block.text || ""}</Markdown>
+                              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{block.text || ""}</Markdown>
                             )}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : task.result_md ? (
-                    <div className="rendered-md"><Markdown remarkPlugins={[remarkGfm]}>{task.result_md}</Markdown></div>
+                    <div className="rendered-md"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{task.result_md}</Markdown></div>
                   ) : (
                     <div className="text-center py-12 text-muted-foreground">No result</div>
                   )}
