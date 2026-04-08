@@ -30,6 +30,12 @@ const app = new OpenAPIHono();
 
 // -- helpers --
 
+async function computeFileHash(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  const hash = new Bun.CryptoHasher("sha256").update(buf).digest("hex");
+  return hash;
+}
+
 async function saveUpload(
   file: File
 ): Promise<{ path: string; filename: string }> {
@@ -198,6 +204,14 @@ app.openapi(uploadRoute, async (c): Promise<any> => {
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
+  const fileHash = await computeFileHash(file);
+
+  // Check for existing completed task with same file
+  const existing = stmt.findByHash.get(fileHash) as OcrTask | undefined;
+  if (existing) {
+    return c.json({ id: existing.id, status: "completed" as const, message: "Duplicate file, returning cached result" });
+  }
+
   const saved = await saveUpload(file);
   const id = uuid();
   const backend = String(body["backend"] || "pipeline");
@@ -206,7 +220,7 @@ app.openapi(uploadRoute, async (c): Promise<any> => {
   stmt.insert.run({
     $id: id, $filename: saved.filename, $original_name: file.name,
     $status: "pending", $source: "web", $backend: backend,
-    $lang: lang, $file_size: file.size,
+    $lang: lang, $file_size: file.size, $file_hash: fileHash,
   });
 
   const options: ParseOptions = {
@@ -260,6 +274,13 @@ app.openapi(parseAsyncRoute, async (c): Promise<any> => {
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
+  const fileHash = await computeFileHash(file);
+
+  const existing = stmt.findByHash.get(fileHash) as OcrTask | undefined;
+  if (existing) {
+    return c.json({ id: existing.id, status: "completed" as const, message: "Duplicate file, returning cached result" });
+  }
+
   const saved = await saveUpload(file);
   const id = uuid();
   const backend = String(body["backend"] || "pipeline");
@@ -269,7 +290,7 @@ app.openapi(parseAsyncRoute, async (c): Promise<any> => {
   stmt.insert.run({
     $id: id, $filename: saved.filename, $original_name: file.name,
     $status: "pending", $source: "api", $backend: backend,
-    $lang: langList[0] || "ch", $file_size: file.size,
+    $lang: langList[0] || "ch", $file_size: file.size, $file_hash: fileHash,
   });
 
   const options: ParseOptions = {
@@ -326,6 +347,19 @@ app.openapi(parseSyncRoute, async (c): Promise<any> => {
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
+  const fileHash = await computeFileHash(file);
+
+  const existing = stmt.findByHash.get(fileHash) as OcrTask | undefined;
+  if (existing) {
+    return c.json({
+      id: existing.id,
+      status: "completed" as const,
+      markdown: existing.result_md || "",
+      content_list: existing.content_list ? JSON.parse(existing.content_list) : [],
+      pages: existing.pages ? JSON.parse(existing.pages) : [],
+    });
+  }
+
   const saved = await saveUpload(file);
   const id = uuid();
   const backend = String(body["backend"] || "pipeline");
@@ -335,7 +369,7 @@ app.openapi(parseSyncRoute, async (c): Promise<any> => {
   stmt.insert.run({
     $id: id, $filename: saved.filename, $original_name: file.name,
     $status: "pending", $source: "api", $backend: backend,
-    $lang: langList[0] || "ch", $file_size: file.size,
+    $lang: langList[0] || "ch", $file_size: file.size, $file_hash: fileHash,
   });
 
   const options: ParseOptions = {

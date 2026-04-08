@@ -31,9 +31,11 @@ db.exec(`
 `);
 
 // Migrations
-for (const col of ["content_list TEXT", "pages TEXT"]) {
+for (const col of ["content_list TEXT", "pages TEXT", "file_hash TEXT"]) {
   try { db.exec(`ALTER TABLE tasks ADD COLUMN ${col}`); } catch { /* exists */ }
 }
+db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_file_hash ON tasks(file_hash)`);
+
 
 export interface ContentBlock {
   type: string;
@@ -59,12 +61,16 @@ export interface OcrTask {
   created_at: string;
   completed_at: string | null;
   file_size: number;
+  file_hash: string | null;
 }
 
 export const stmt = {
   insert: db.prepare(
-    `INSERT INTO tasks (id, filename, original_name, status, source, backend, lang, file_size)
-     VALUES ($id, $filename, $original_name, $status, $source, $backend, $lang, $file_size)`
+    `INSERT INTO tasks (id, filename, original_name, status, source, backend, lang, file_size, file_hash)
+     VALUES ($id, $filename, $original_name, $status, $source, $backend, $lang, $file_size, $file_hash)`
+  ),
+  findByHash: db.prepare(
+    `SELECT * FROM tasks WHERE file_hash = ?1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`
   ),
   setResult: db.prepare(
     `UPDATE tasks SET status='completed', result_md=$result_md, content_list=$content_list, pages=$pages, completed_at=datetime('now') WHERE id=$id`
