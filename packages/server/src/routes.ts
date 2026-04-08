@@ -88,7 +88,7 @@ const ContentBlockSchema = z.object({
   text_level: z.number().optional(),
   page_idx: z.number().optional(),
   img_path: z.string().optional(),
-  img_data: z.string().optional(),
+  img_url: z.string().optional().openapi({ description: "URL to the extracted image file" }),
 }).openapi("ContentBlock");
 
 const PageSizeSchema = z.object({
@@ -160,6 +160,20 @@ app.get("/files/:filename", async (c) => {
   const filename = c.req.param("filename");
   const filepath = join(UPLOAD_DIR, filename);
   if (!existsSync(filepath)) return c.json({ error: "File not found" }, 404);
+
+  const ext = extname(filename).toLowerCase();
+  const mime = MIME_MAP[ext] || "application/octet-stream";
+  const file = Bun.file(filepath);
+  return new Response(file, {
+    headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" },
+  });
+});
+
+// -- Serve extracted images --
+app.get("/files/img/:filename", async (c) => {
+  const filename = c.req.param("filename");
+  const filepath = join(UPLOAD_DIR, "img", filename);
+  if (!existsSync(filepath)) return c.json({ error: "Image not found" }, 404);
 
   const ext = extname(filename).toLowerCase();
   const mime = MIME_MAP[ext] || "application/octet-stream";

@@ -1,7 +1,9 @@
 import sharp from "sharp";
 import { PDFDocument, degrees } from "pdf-lib";
 import * as mupdf from "mupdf";
-import { extname } from "path";
+import { extname, dirname, join } from "path";
+import { mkdirSync } from "fs";
+import { v4 as uuid } from "uuid";
 import type { ContentBlock } from "./db.ts";
 
 const DEFAULT_MINERU_URL = process.env.MINERU_URL || "http://10.0.10.2:8001";
@@ -272,23 +274,39 @@ export async function parseFile(
         }
       }
 
-      // Extract images and inject base64 data into content_list and markdown
+      // Extract images: save to disk and set URL references
       const images = entry.images as Record<string, string> | undefined;
       if (images && typeof images === "object") {
-        // Inject img_data into content_list image blocks
+        const uploadDir = dirname(filePath);
+        const imgDir = join(uploadDir, "img");
+        mkdirSync(imgDir, { recursive: true });
+
+        // Save each base64 image to disk and build URL map
+        const urlMap: Record<string, string> = {};
+        for (const [key, dataUri] of Object.entries(images)) {
+          // dataUri is like "data:image/jpeg;base64,..."
+          const match = dataUri.match(/^data:image\/(\w+);base64,(.+)$/);
+          if (!match) continue;
+          const imgExt = match[1] === "jpeg" ? "jpg" : match[1];
+          const imgFilename = `${uuid()}.${imgExt}`;
+          const imgPath = join(imgDir, imgFilename);
+          await Bun.write(imgPath, Buffer.from(match[2]!, "base64"));
+          urlMap[key] = `/files/img/${imgFilename}`;
+        }
+
+        // Set img_url on content_list image blocks
         for (const block of contentList) {
           if (block.img_path) {
-            // img_path is like "images/xxx.jpg", images dict key is just "xxx.jpg"
             const key = block.img_path.replace(/^images\//, "");
-            if (images[key]) {
-              block.img_data = images[key];
+            if (urlMap[key]) {
+              block.img_url = urlMap[key];
             }
           }
         }
 
-        // Replace markdown image paths with base64 data URIs
-        for (const [key, dataUri] of Object.entries(images)) {
-          markdown = markdown.replaceAll(`images/${key}`, dataUri);
+        // Replace markdown image paths with URLs
+        for (const [key, url] of Object.entries(urlMap)) {
+          markdown = markdown.replaceAll(`images/${key}`, url);
         }
       }
     }

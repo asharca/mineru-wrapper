@@ -5,7 +5,7 @@ export interface ContentBlock {
   text_level?: number;
   page_idx?: number;
   img_path?: string;
-  img_data?: string;
+  img_url?: string;
 }
 
 export interface PageSize {
