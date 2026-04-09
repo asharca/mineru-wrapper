@@ -1,4 +1,6 @@
-import { Hono } from "hono";
+import { OpenAPIHono } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
+import { apiReference } from "@scalar/hono-api-reference";
 import { v4 as uuid } from "uuid";
 import { mkdirSync, unlinkSync, existsSync } from "fs";
 import { join, extname } from "path";
@@ -24,7 +26,7 @@ const MIME_MAP: Record<string, string> = {
   ".js": "application/javascript",
 };
 
-const app = new Hono();
+const app = new OpenAPIHono();
 
 // -- helpers --
 
@@ -105,38 +107,163 @@ function serializeTask(task: OcrTask) {
   };
 }
 
-// ============ Routes ============
+const ErrorSchema = z.object({
+  error: z.string(),
+}).openapi("Error");
 
-// -- Serve original uploaded file --
-app.get("/files/:filename", async (c) => {
-  const filename = c.req.param("filename");
-  const filepath = join(UPLOAD_DIR, filename);
-  if (!existsSync(filepath)) return c.json({ error: "File not found" }, 404);
+const TaskStatusSchema = z.enum(["pending", "processing", "completed", "failed"]).openapi("TaskStatus");
 
-  const ext = extname(filename).toLowerCase();
-  const mime = MIME_MAP[ext] || "application/octet-stream";
-  const file = Bun.file(filepath);
-  return new Response(file, {
-    headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" },
-  });
+const ContentBlockSchema = z.object({
+  type: z.string(),
+  bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  text: z.string().optional(),
+  text_level: z.number().optional(),
+  page_idx: z.number().optional(),
+  img_path: z.string().optional(),
+  img_url: z.string().optional(),
+  table_body: z.string().optional(),
+  list_items: z.array(z.string()).optional(),
+}).openapi("ContentBlock");
+
+const PageSizeSchema = z.object({
+  width: z.number(),
+  height: z.number(),
+}).openapi("PageSize");
+
+const TaskSchema = z.object({
+  id: z.string().uuid(),
+  filename: z.string(),
+  original_name: z.string(),
+  status: TaskStatusSchema,
+  source: z.enum(["web", "api"]),
+  backend: z.string(),
+  lang: z.string(),
+  result_md: z.string().nullable(),
+  content_list: z.array(ContentBlockSchema).nullable(),
+  pages: z.array(PageSizeSchema).nullable(),
+  progress: z.string().nullable().optional(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  completed_at: z.string().nullable(),
+  file_size: z.number(),
+}).openapi("Task");
+
+const TaskSummarySchema = z.object({
+  id: z.string().uuid(),
+  filename: z.string(),
+  original_name: z.string(),
+  status: TaskStatusSchema,
+  source: z.enum(["web", "api"]),
+  backend: z.string(),
+  lang: z.string(),
+  progress: z.string().nullable().optional(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  completed_at: z.string().nullable(),
+  file_size: z.number(),
+}).openapi("TaskSummary");
+
+const PaginationSchema = z.object({
+  page: z.number(),
+  limit: z.number(),
+  total: z.number(),
+  pages: z.number(),
+}).openapi("Pagination");
+
+const TaskListSchema = z.object({
+  tasks: z.array(TaskSummarySchema),
+  pagination: PaginationSchema,
+}).openapi("TaskList");
+
+const TaskCreatedSchema = z.object({
+  id: z.string().uuid(),
+  status: z.literal("pending"),
+  message: z.string(),
+}).openapi("TaskCreated");
+
+const SyncResultSchema = z.object({
+  id: z.string().uuid(),
+  status: z.literal("completed"),
+  markdown: z.string(),
+  content_list: z.array(ContentBlockSchema),
+  pages: z.array(PageSizeSchema),
+}).openapi("SyncResult");
+
+// ============ OpenAPI Routes ============
+
+const UploadRequestSchema = z.object({
+  file: z.any(),
+  backend: z.enum(["pipeline", "vlm-auto-engine", "hybrid-auto-engine"]).optional(),
+  lang: z.enum(["ch", "en", "japan", "korean", "latin", "arabic", "cyrillic", "devanagari"]).optional(),
+  parse_method: z.enum(["auto", "ocr", "txt"]).optional(),
+  formula_enable: z.enum(["true", "false"]).optional(),
+  table_enable: z.enum(["true", "false"]).optional(),
+  auto_rotate: z.enum(["true", "false"]).optional(),
+  mineru_url: z.string().optional(),
+}).openapi("UploadRequest");
+
+const ApiParseRequestSchema = z.object({
+  file: z.any(),
+  backend: z.enum(["pipeline", "vlm-auto-engine", "hybrid-auto-engine"]).optional(),
+  lang_list: z.union([z.string(), z.array(z.string())]).optional(),
+  parse_method: z.enum(["auto", "ocr", "txt"]).optional(),
+  formula_enable: z.enum(["true", "false"]).optional(),
+  table_enable: z.enum(["true", "false"]).optional(),
+  start_page_id: z.string().optional(),
+  end_page_id: z.string().optional(),
+  auto_rotate: z.enum(["true", "false"]).optional(),
+  mineru_url: z.string().optional(),
+}).openapi("ApiParseRequest");
+
+const UpdateTaskRequestSchema = z.object({
+  result_md: z.string().optional(),
+  content_list: z.array(ContentBlockSchema).optional(),
+}).openapi("UpdateTaskRequest");
+
+const ReprocessRequestSchema = z.object({
+  rotate: z.number().optional(),
+  rotate_pages: z.array(z.number()).optional(),
+  rotations: z.record(z.string(), z.number()).optional(),
+  page_indices: z.array(z.number()).optional(),
+  backend: z.string().optional(),
+  lang: z.string().optional(),
+  parse_method: z.string().optional(),
+  formula_enable: z.boolean().optional(),
+  table_enable: z.boolean().optional(),
+  auto_rotate: z.boolean().optional(),
+  mineru_url: z.string().optional(),
+}).openapi("ReprocessRequest");
+
+// ============ OpenAPI Routes ============
+
+const uploadRoute = createRoute({
+  method: "post",
+  path: "/upload",
+  tags: ["Upload"],
+  summary: "Upload file for OCR (async)",
+  description: "Upload a file via the web UI. Returns immediately with a task ID. Poll GET /tasks/{id} for results.",
+  request: {
+    body: {
+      content: {
+        "multipart/form-data": {
+          schema: UploadRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Task created",
+      content: { "application/json": { schema: TaskCreatedSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
 });
 
-// -- Serve extracted images --
-app.get("/files/img/:filename", async (c) => {
-  const filename = c.req.param("filename");
-  const filepath = join(UPLOAD_DIR, "img", filename);
-  if (!existsSync(filepath)) return c.json({ error: "Image not found" }, 404);
-
-  const ext = extname(filename).toLowerCase();
-  const mime = MIME_MAP[ext] || "application/octet-stream";
-  const file = Bun.file(filepath);
-  return new Response(file, {
-    headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" },
-  });
-});
-
-// -- Web upload (async) --
-app.post("/upload", async (c) => {
+app.openapi(uploadRoute, async (c) => {
   const body = await c.req.parseBody();
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
@@ -148,7 +275,6 @@ app.post("/upload", async (c) => {
 
   const existing = stmt.findByHash.get(hash) as OcrTask | undefined;
   if (existing) {
-    // Copy the existing file (may be rotated) so the preview matches the cached result
     const saved = await saveForCached(existing.filename, buf, ext);
     stmt.insertCached.run({
       $id: id, $filename: saved.filename, $original_name: file.name,
@@ -180,8 +306,34 @@ app.post("/upload", async (c) => {
   return c.json({ id, status: "pending", message: "Processing started" });
 });
 
-// -- API parse (async) --
-app.post("/api/parse", async (c) => {
+const parseAsyncRoute = createRoute({
+  method: "post",
+  path: "/api/parse",
+  tags: ["API"],
+  summary: "Parse file (async)",
+  description: "Submit a file for OCR processing. Returns a task ID immediately. Poll GET /tasks/{id} for results.",
+  request: {
+    body: {
+      content: {
+        "multipart/form-data": {
+          schema: ApiParseRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Task created",
+      content: { "application/json": { schema: TaskCreatedSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+app.openapi(parseAsyncRoute, async (c) => {
   const body = await c.req.parseBody();
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
@@ -194,7 +346,6 @@ app.post("/api/parse", async (c) => {
 
   const existing = stmt.findByHash.get(hash) as OcrTask | undefined;
   if (existing) {
-    // Copy the existing file (may be rotated) so the preview matches the cached result
     const saved = await saveForCached(existing.filename, buf, ext);
     stmt.insertCached.run({
       $id: id, $filename: saved.filename, $original_name: file.name,
@@ -228,8 +379,42 @@ app.post("/api/parse", async (c) => {
   return c.json({ id, status: "pending", message: "Processing started" });
 });
 
-// -- API parse (sync) --
-app.post("/api/parse/sync", async (c) => {
+const parseSyncRoute = createRoute({
+  method: "post",
+  path: "/api/parse/sync",
+  tags: ["API"],
+  summary: "Parse file (sync)",
+  description: "Submit a file and wait for OCR results. Blocks until processing is complete (may take minutes for large files).",
+  request: {
+    body: {
+      content: {
+        "multipart/form-data": {
+          schema: ApiParseRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "OCR result",
+      content: { "application/json": { schema: SyncResultSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Processing failed",
+      content: {
+        "application/json": {
+          schema: z.object({ id: z.string(), status: z.literal("failed"), error: z.string() }),
+        },
+      },
+    },
+  },
+});
+
+app.openapi(parseSyncRoute, async (c) => {
   const body = await c.req.parseBody();
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
@@ -242,7 +427,6 @@ app.post("/api/parse/sync", async (c) => {
 
   const existing = stmt.findByHash.get(hash) as OcrTask | undefined;
   if (existing) {
-    // Copy the existing file (may be rotated) so the preview matches the cached result
     const saved = await saveForCached(existing.filename, buf, ext);
     stmt.insertCached.run({
       $id: id, $filename: saved.filename, $original_name: file.name,
@@ -294,15 +478,57 @@ app.post("/api/parse/sync", async (c) => {
   }
 });
 
-// -- Task detail --
-app.get("/tasks/:id", (c) => {
+const getTaskRoute = createRoute({
+  method: "get",
+  path: "/tasks/{id}",
+  tags: ["Tasks"],
+  summary: "Get task detail",
+  description: "Retrieve full task info including OCR results, content blocks, and page sizes.",
+  request: {
+    params: z.object({
+      id: z.string().uuid(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Task detail",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+app.openapi(getTaskRoute, (c) => {
   const task = stmt.getById.get(c.req.param("id")) as OcrTask | undefined;
   if (!task) return c.json({ error: "Task not found" }, 404);
   return c.json(serializeTask(task));
 });
 
-// -- Task list --
-app.get("/tasks", (c) => {
+const listTasksRoute = createRoute({
+  method: "get",
+  path: "/tasks",
+  tags: ["Tasks"],
+  summary: "List tasks",
+  description: "Paginated list of OCR tasks. Optionally filter by source (web/api).",
+  request: {
+    query: z.object({
+      page: z.string().optional(),
+      limit: z.string().optional(),
+      source: z.enum(["web", "api"]).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Task list",
+      content: { "application/json": { schema: TaskListSchema } },
+    },
+  },
+});
+
+app.openapi(listTasksRoute, (c) => {
   const page = Math.max(1, Number(c.req.query("page")) || 1);
   const limit = Math.min(100, Math.max(1, Number(c.req.query("limit")) || 20));
   const offset = (page - 1) * limit;
@@ -325,8 +551,30 @@ app.get("/tasks", (c) => {
   });
 });
 
-// -- Delete task --
-app.delete("/tasks/:id", (c) => {
+const deleteTaskRoute = createRoute({
+  method: "delete",
+  path: "/tasks/{id}",
+  tags: ["Tasks"],
+  summary: "Delete task",
+  description: "Delete a task and its uploaded file.",
+  request: {
+    params: z.object({
+      id: z.string().uuid(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Deleted",
+      content: { "application/json": { schema: z.object({ message: z.string() }) } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+app.openapi(deleteTaskRoute, (c) => {
   const task = stmt.getById.get(c.req.param("id")) as OcrTask | undefined;
   if (!task) return c.json({ error: "Task not found" }, 404);
   cleanFile(join(UPLOAD_DIR, task.filename));
@@ -334,12 +582,41 @@ app.delete("/tasks/:id", (c) => {
   return c.json({ message: "Deleted" });
 });
 
-// -- Update task content (manual edit) --
-app.patch("/tasks/:id", async (c) => {
+const updateContentRoute = createRoute({
+  method: "patch",
+  path: "/tasks/{id}",
+  tags: ["Tasks"],
+  summary: "Update task content",
+  description: "Manually edit the recognized text content (markdown and/or content blocks).",
+  request: {
+    params: z.object({
+      id: z.string().uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: UpdateTaskRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+app.openapi(updateContentRoute, (c) => {
   const task = stmt.getById.get(c.req.param("id")) as OcrTask | undefined;
   if (!task) return c.json({ error: "Task not found" }, 404);
 
-  const body = await c.req.json<{ result_md?: string; content_list?: ContentBlock[] }>();
+  const body = c.req.valid("json");
   const newMd = body.result_md ?? task.result_md;
   const newCl = body.content_list ? JSON.stringify(body.content_list) : task.content_list;
 
@@ -349,29 +626,49 @@ app.patch("/tasks/:id", async (c) => {
   return c.json(serializeTask(updated));
 });
 
-// -- Reprocess task (rotate + re-OCR) --
-app.post("/tasks/:id/reprocess", async (c) => {
+const reprocessRoute = createRoute({
+  method: "post",
+  path: "/tasks/{id}/reprocess",
+  tags: ["Tasks"],
+  summary: "Reprocess task",
+  description: "Re-run OCR on the task's file. Optionally rotate by a specific angle before re-processing. For PDFs, use page_index to only re-OCR a single page.",
+  request: {
+    params: z.object({
+      id: z.string().uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: ReprocessRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Reprocessing started",
+      content: {
+        "application/json": {
+          schema: z.object({ id: z.string(), status: z.string(), message: z.string() }),
+        },
+      },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+app.openapi(reprocessRoute, async (c) => {
   const task = stmt.getById.get(c.req.param("id")) as OcrTask | undefined;
   if (!task) return c.json({ error: "Task not found" }, 404);
 
   const filePath = join(UPLOAD_DIR, task.filename);
   if (!existsSync(filePath)) return c.json({ error: "Source file not found" }, 404);
 
-  const body = await c.req.json<{
-    rotate?: number;
-    rotate_pages?: number[];
-    rotations?: Record<string, number>;
-    page_indices?: number[];
-    backend?: string;
-    lang?: string;
-    parse_method?: string;
-    formula_enable?: boolean;
-    table_enable?: boolean;
-    auto_rotate?: boolean;
-    mineru_url?: string;
-  }>();
+  const body = c.req.valid("json");
 
-  // Per-page rotations: rotate each page by its own angle, then re-OCR those pages
   if (body.rotations && Object.keys(body.rotations).length > 0) {
     for (const [pageStr, angle] of Object.entries(body.rotations)) {
       const pageIdx = Number(pageStr);
@@ -384,7 +681,6 @@ app.post("/tasks/:id/reprocess", async (c) => {
     }
   }
 
-  // Single-angle rotation for all/specific pages
   if (body.rotate && body.rotate !== 0 && !body.rotations) {
     await rotateFile(filePath, body.rotate, body.rotate_pages);
   }
@@ -399,7 +695,6 @@ app.post("/tasks/:id/reprocess", async (c) => {
     mineru_url: body.mineru_url || undefined,
   };
 
-  // Partial re-OCR: extract selected pages into a temp PDF, send only that to MineRU, merge results back
   if (body.page_indices?.length) {
     const pageIndices = body.page_indices.sort((a, b) => a - b);
 
@@ -467,11 +762,51 @@ app.post("/tasks/:id/reprocess", async (c) => {
     return c.json({ id: task.id, status: "processing", message: `Re-OCR page(s) ${label} started` });
   }
 
-  // Full reprocess
   stmt.setStatus.run({ $id: task.id, $status: "pending" });
   processTask({ id: task.id, original_name: task.original_name }, filePath, options);
 
   return c.json({ id: task.id, status: "pending", message: "Reprocessing started" });
 });
+
+app.get("/files/:filename", async (c) => {
+  const filename = c.req.param("filename");
+  const filepath = join(UPLOAD_DIR, filename);
+  if (!existsSync(filepath)) return c.json({ error: "File not found" }, 404);
+
+  const ext = extname(filename).toLowerCase();
+  const mime = MIME_MAP[ext] || "application/octet-stream";
+  const file = Bun.file(filepath);
+  return new Response(file, {
+    headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" },
+  });
+});
+
+app.get("/files/img/:filename", async (c) => {
+  const filename = c.req.param("filename");
+  const filepath = join(UPLOAD_DIR, "img", filename);
+  if (!existsSync(filepath)) return c.json({ error: "Image not found" }, 404);
+
+  const ext = extname(filename).toLowerCase();
+  const mime = MIME_MAP[ext] || "application/octet-stream";
+  const file = Bun.file(filepath);
+  return new Response(file, {
+    headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" },
+  });
+});
+
+// OpenAPI documentation endpoint
+app.doc("/api/openapi", {
+  openapi: "3.0.0",
+  info: {
+    title: "MineRU OCR Wrapper API",
+    version: "1.0.0",
+    description: "OCR document parsing service powered by MineRU. Supports PDF, PNG, JPG, TIFF, BMP, GIF.",
+  },
+});
+
+app.get("/docs", apiReference({
+  url: "/api/openapi",
+  theme: "default",
+}));
 
 export default app;
