@@ -26,7 +26,7 @@ export interface OcrTask {
   result_md: string | null;
   content_list: ContentBlock[] | null;
   pages: PageSize[] | null;
-  progress: string | null;
+  progress: string | null; // JSON: { state, percent?, message? }
   error: string | null;
   created_at: string;
   completed_at: string | null;

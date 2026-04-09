@@ -170,3 +170,10 @@
 
 /* Clean reading mode */
 .prose-container { color: var(--foreground); font-size: 16px; line-height: 1.85; }
+
+/* Progress bar indeterminate animation */
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(200%); }
+  100% { transform: translateX(-100%); }
+}

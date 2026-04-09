@@ -20,7 +20,7 @@ export interface ParseOptions {
   end_page_id?: number;
   auto_rotate?: boolean;
   mineru_url?: string;
-  onProgress?: (progress: string) => void;
+  onProgress?: (progress: { state: string; percent?: number; message?: string }) => void;
 }
 
 export interface ParseResult {
@@ -285,10 +285,26 @@ function buildForm(filePath: string, originalName: string, options: ParseOptions
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 600_000;
 
+type ProgressCallback = (progress: { state: string; percent?: number; message?: string }) => void;
+
+/**
+ * Parse MineRU's progress field into a percent (0-100).
+ * Handles: number (0-1 or 0-100), "50%", "3/10", etc.
+ */
+function parsePercent(raw: unknown): number | undefined {
+  if (typeof raw === "number") return raw <= 1 ? Math.round(raw * 100) : Math.round(raw);
+  if (typeof raw !== "string") return undefined;
+  const pct = raw.match(/^(\d+(?:\.\d+)?)\s*%$/);
+  if (pct) return Math.round(Number(pct[1]));
+  const frac = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (frac && Number(frac[2]) > 0) return Math.round((Number(frac[1]) / Number(frac[2])) * 100);
+  return undefined;
+}
+
 async function submitAndPoll(
   mineruUrl: string,
   form: FormData,
-  onProgress?: (progress: string) => void,
+  onProgress?: ProgressCallback,
 ): Promise<Record<string, unknown>> {
   // Submit async task
   const submitRes = await fetch(`${mineruUrl}/tasks`, {
@@ -306,7 +322,7 @@ async function submitAndPoll(
   const taskId = submitJson.task_id as string;
   if (!taskId) throw new Error("MineRU did not return a task_id");
 
-  onProgress?.("submitted");
+  onProgress?.({ state: "submitted", percent: 0 });
 
   // Poll for status
   const deadline = Date.now() + POLL_TIMEOUT;
@@ -319,17 +335,14 @@ async function submitAndPoll(
     if (!statusRes.ok) continue;
 
     const statusJson = (await statusRes.json()) as Record<string, unknown>;
-    const state = statusJson.state || statusJson.status;
-    const progress = statusJson.progress;
+    const state = String(statusJson.state || statusJson.status || "unknown");
+    const percent = parsePercent(statusJson.progress);
+    const message = statusJson.message ? String(statusJson.message) : undefined;
 
-    if (progress !== undefined) {
-      onProgress?.(String(progress));
-    } else if (typeof state === "string") {
-      onProgress?.(state);
-    }
+    onProgress?.({ state, percent, message });
 
     if (state === "done" || state === "completed" || state === "success") {
-      // Fetch result
+      onProgress?.({ state: "fetching_result", percent: 100 });
       const resultRes = await fetch(`${mineruUrl}/tasks/${taskId}/result`, {
         signal: AbortSignal.timeout(60_000),
       });

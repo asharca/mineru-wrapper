@@ -128,9 +128,13 @@ export default function HistoryPage() {
                           )}
                         >
                           {status.label}
-                          {t.status === "processing" && t.progress && (
-                            <span className="ml-1 opacity-70">{t.progress}</span>
-                          )}
+                          {t.status === "processing" && t.progress && (() => {
+                            try {
+                              const p = JSON.parse(t.progress) as { percent?: number };
+                              if (p.percent !== undefined) return <span className="ml-1 opacity-70">{p.percent}%</span>;
+                            } catch { /* ignore */ }
+                            return null;
+                          })()}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{formatSize(t.file_size)}</TableCell>

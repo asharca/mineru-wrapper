@@ -60,8 +60,8 @@ async function processTask(
 ) {
   stmt.setStatus.run({ $id: task.id, $status: "processing" });
   try {
-    options.onProgress = (progress: string) => {
-      stmt.setProgress.run({ $id: task.id, $progress: progress });
+    options.onProgress = (progress) => {
+      stmt.setProgress.run({ $id: task.id, $progress: JSON.stringify(progress) });
     };
     const result = await parseFile(filePath, task.original_name, options);
     stmt.setResult.run({
@@ -673,8 +673,8 @@ app.openapi(reprocessRoute, async (c): Promise<any> => {
       try {
         // Extract only the requested pages into a temporary PDF
         tmpPath = await extractPdfPages(filePath, pageIndices);
-        options.onProgress = (progress: string) => {
-          stmt.setProgress.run({ $id: task.id, $progress: progress });
+        options.onProgress = (progress) => {
+          stmt.setProgress.run({ $id: task.id, $progress: JSON.stringify(progress) });
         };
         const result = await parseFile(tmpPath, task.original_name, options);
 
