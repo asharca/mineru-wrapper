@@ -1,11 +1,11 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import routes from "./src/routes.ts";
 
 const PORT = Number(process.env.PORT) || 3001;
 
-const app = new OpenAPIHono();
+const app = new Hono();
 app.use("*", cors());
 app.route("/", routes);
 

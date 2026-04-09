@@ -2,7 +2,7 @@ services:
   ocr-center:
     build: .
     # ports:
-    #   - "3001:3001"
+    # - "3001:3001"
     environment:
       - MINERU_URL=http://10.0.10.2:8001
       - DB_PATH=/app/data/ocr.db
