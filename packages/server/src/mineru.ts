@@ -210,32 +210,25 @@ export async function rotateFile(filePath: string, angle: number, pageIndices?: 
 
   if (ext === ".pdf") {
     const pdfBytes = await Bun.file(filePath).arrayBuffer();
-    const doc = mupdf.Document.openDocument(pdfBytes, "application/pdf");
-    const numPages = doc.countPages();
-    const matrix = mupdf.Matrix.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE);
-    const newPdf = await PDFDocument.create();
+    const srcPdf = await PDFDocument.load(pdfBytes);
+    const numPages = srcPdf.getPageCount();
 
     // Which pages to rotate (default: all)
     const rotateSet = pageIndices ? new Set(pageIndices) : null;
 
     for (let i = 0; i < numPages; i++) {
-      const page = doc.loadPage(i);
-      const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
-      const png = pixmap.asPNG();
-
       const shouldRotate = rotateSet === null || rotateSet.has(i);
-      const imgBuf = shouldRotate
-        ? await sharp(Buffer.from(png)).rotate(angle).jpeg({ quality: 90 }).toBuffer()
-        : await sharp(Buffer.from(png)).jpeg({ quality: 90 }).toBuffer();
-
-      const img = await newPdf.embedJpg(imgBuf);
-      const newPage = newPdf.addPage([img.width, img.height]);
-      newPage.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
-
-      console.log(`[rotate] pdf page ${i + 1}/${numPages}${shouldRotate ? ` rotated ${angle}°` : " kept"}`);
+      if (shouldRotate) {
+        const page = srcPdf.getPage(i);
+        const currentRotation = page.getRotation().angle;
+        page.setRotation(degrees(currentRotation + angle));
+        console.log(`[rotate] pdf page ${i + 1}/${numPages} rotated ${angle}°`);
+      } else {
+        console.log(`[rotate] pdf page ${i + 1}/${numPages} kept`);
+      }
     }
 
-    const rotatedBytes = await newPdf.save();
+    const rotatedBytes = await srcPdf.save();
     await Bun.write(filePath, rotatedBytes);
     return;
   }
