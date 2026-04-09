@@ -121,17 +121,17 @@ interface PdfViewerProps {
   onClick: (i: number) => void;
   pageWidths?: number[];
   pageHeights?: number[];
+  currentPage: number;
+  onPageChange: (page: number) => void;
 }
 
-function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pageHeights }: PdfViewerProps) {
+function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pageHeights, currentPage, onPageChange }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<{ w: number; h: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const onDocumentLoadSuccess = ({ numPages: n }: { numPages: number }) => {
     setNumPages(n);
-    setCurrentPage(1);
   };
 
   const onPageLoadSuccess = (page: { width: number; height: number }) => {
@@ -165,7 +165,7 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
         <div className="flex items-center justify-center gap-2 py-1.5 px-3 bg-slate-50 border-b border-border shrink-0">
           <button
             disabled={currentPage <= 1}
-            onClick={() => setCurrentPage((p) => p - 1)}
+            onClick={() => onPageChange(currentPage - 1)}
             className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -175,7 +175,7 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
           </span>
           <button
             disabled={currentPage >= numPages}
-            onClick={() => setCurrentPage((p) => p + 1)}
+            onClick={() => onPageChange(currentPage + 1)}
             className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
           >
             <ChevronRight className="w-4 h-4" />
@@ -266,6 +266,7 @@ export default function TaskDetail() {
   const [task, setTask] = useState<Awaited<ReturnType<typeof getTask>> | null>(null);
   const [error, setError] = useState("");
   const [activeBlock, setActiveBlock] = useState<number | null>(null);
+  const [pdfPage, setPdfPage] = useState(1);
   const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   useEffect(() => {
@@ -286,20 +287,33 @@ export default function TaskDetail() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [id]);
 
+  const blocks = (task?.content_list || []).filter((b) => b.type !== "discarded");
+
   const scrollToBlock = useCallback((i: number) => {
     blockRefs.current.get(i)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
+  const goToBlock = useCallback((i: number) => {
+    setActiveBlock(i);
+    scrollToBlock(i);
+    // Navigate PDF to the block's page
+    const pageIdx = blocks[i]?.page_idx ?? 0;
+    setPdfPage(pageIdx + 1);
+  }, [scrollToBlock, blocks]);
+
   const handleHover = useCallback((i: number | null) => {
     setActiveBlock(i);
-    if (i !== null) scrollToBlock(i);
-  }, [scrollToBlock]);
+    if (i !== null) {
+      scrollToBlock(i);
+      const pageIdx = blocks[i]?.page_idx ?? 0;
+      setPdfPage(pageIdx + 1);
+    }
+  }, [scrollToBlock, blocks]);
 
   if (error) return <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-destructive text-sm">{error}</div>;
   if (!task) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
 
   const isProcessing = task.status === "pending" || task.status === "processing";
-  const blocks = (task.content_list || []).filter((b) => b.type !== "discarded");
   const isImage = /\.(png|jpe?g|gif|bmp|tiff)$/i.test(task.filename);
   const isPdf = /\.pdf$/i.test(task.filename);
   const status = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
@@ -349,13 +363,14 @@ export default function TaskDetail() {
                   {isImage ? (
                     <ImageOverlay src={fileUrl(task.filename)} blocks={blocks}
                       activeIndex={activeBlock} onHover={handleHover}
-                      onClick={(i) => { setActiveBlock(i); scrollToBlock(i); }}
+                      onClick={goToBlock}
                     />
                   ) : isPdf ? (
                     <PdfViewer src={fileUrl(task.filename)} blocks={blocks}
                       activeIndex={activeBlock} onHover={handleHover}
-                      onClick={(i) => { setActiveBlock(i); scrollToBlock(i); }}
+                      onClick={goToBlock}
                       pageWidths={pageWidths} pageHeights={pageHeights}
+                      currentPage={pdfPage} onPageChange={setPdfPage}
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
@@ -385,7 +400,7 @@ export default function TaskDetail() {
                               ? "bg-blue-50 border-primary shadow-[0_0_0_1px] shadow-primary"
                               : "border-border hover:bg-blue-50/50 hover:border-primary/50"
                           )}
-                          onMouseEnter={() => setActiveBlock(i)}
+                          onMouseEnter={() => goToBlock(i)}
                           onMouseLeave={() => setActiveBlock(null)}
                         >
                           <div className="flex items-center gap-2 mb-1.5">
