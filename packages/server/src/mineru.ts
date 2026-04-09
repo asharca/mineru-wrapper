@@ -189,6 +189,58 @@ async function autoRotateFile(filePath: string, mineruUrl: string): Promise<void
   }
 }
 
+/**
+ * Manually rotate a file by a specific angle.
+ * For images: rotate with sharp.
+ * For PDFs: render pages to images, rotate specified pages, rebuild PDF.
+ */
+export async function rotateFile(filePath: string, angle: number, pageIndices?: number[]): Promise<void> {
+  const validAngles = [90, 180, 270];
+  if (!validAngles.includes(angle)) return;
+
+  const ext = extname(filePath).toLowerCase();
+
+  if (IMAGE_EXTS.has(ext)) {
+    const buf = await Bun.file(filePath).arrayBuffer();
+    const rotated = await sharp(Buffer.from(buf)).rotate(angle).toBuffer();
+    await Bun.write(filePath, rotated);
+    console.log(`[rotate] image rotated ${angle}°`);
+    return;
+  }
+
+  if (ext === ".pdf") {
+    const pdfBytes = await Bun.file(filePath).arrayBuffer();
+    const doc = mupdf.Document.openDocument(pdfBytes, "application/pdf");
+    const numPages = doc.countPages();
+    const matrix = mupdf.Matrix.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE);
+    const newPdf = await PDFDocument.create();
+
+    // Which pages to rotate (default: all)
+    const rotateSet = pageIndices ? new Set(pageIndices) : null;
+
+    for (let i = 0; i < numPages; i++) {
+      const page = doc.loadPage(i);
+      const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
+      const png = pixmap.asPNG();
+
+      const shouldRotate = rotateSet === null || rotateSet.has(i);
+      const imgBuf = shouldRotate
+        ? await sharp(Buffer.from(png)).rotate(angle).jpeg({ quality: 90 }).toBuffer()
+        : await sharp(Buffer.from(png)).jpeg({ quality: 90 }).toBuffer();
+
+      const img = await newPdf.embedJpg(imgBuf);
+      const newPage = newPdf.addPage([img.width, img.height]);
+      newPage.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+
+      console.log(`[rotate] pdf page ${i + 1}/${numPages}${shouldRotate ? ` rotated ${angle}°` : " kept"}`);
+    }
+
+    const rotatedBytes = await newPdf.save();
+    await Bun.write(filePath, rotatedBytes);
+    return;
+  }
+}
+
 export async function parseFile(
   filePath: string,
   originalName: string,

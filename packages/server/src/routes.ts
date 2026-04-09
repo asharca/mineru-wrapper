@@ -4,8 +4,8 @@ import { apiReference } from "@scalar/hono-api-reference";
 import { v4 as uuid } from "uuid";
 import { mkdirSync, unlinkSync, existsSync } from "fs";
 import { join, extname } from "path";
-import { stmt, type OcrTask } from "./db.ts";
-import { parseFile, type ParseOptions } from "./mineru.ts";
+import { stmt, type OcrTask, type ContentBlock } from "./db.ts";
+import { parseFile, rotateFile, type ParseOptions } from "./mineru.ts";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -532,6 +532,175 @@ app.openapi(deleteTaskRoute, (c): any => {
   cleanFile(join(UPLOAD_DIR, task.filename));
   stmt.deleteById.run(c.req.param("id"));
   return c.json({ message: "Deleted" });
+});
+
+// -- Update task content (manual edit) --
+const updateContentRoute = createRoute({
+  method: "patch",
+  path: "/tasks/{id}",
+  tags: ["Tasks"],
+  summary: "Update task content",
+  description: "Manually edit the recognized text content (markdown and/or content blocks).",
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ description: "Task ID" }),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            result_md: z.string().optional().openapi({ description: "Updated markdown content" }),
+            content_list: z.array(ContentBlockSchema).optional().openapi({ description: "Updated content blocks" }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Updated", content: { "application/json": { schema: TaskSchema } } },
+    404: { description: "Not found", content: { "application/json": { schema: ErrorSchema } } },
+  },
+});
+
+app.openapi(updateContentRoute, (c): any => {
+  const task = stmt.getById.get(c.req.param("id")) as OcrTask | undefined;
+  if (!task) return c.json({ error: "Task not found" }, 404);
+
+  const body = c.req.valid("json");
+  const newMd = body.result_md ?? task.result_md;
+  const newCl = body.content_list ? JSON.stringify(body.content_list) : task.content_list;
+
+  stmt.updateContent.run({ $id: task.id, $result_md: newMd, $content_list: newCl });
+
+  const updated = stmt.getById.get(task.id) as OcrTask;
+  return c.json({
+    ...updated,
+    content_list: updated.content_list ? JSON.parse(updated.content_list) : null,
+    pages: updated.pages ? JSON.parse(updated.pages) : null,
+  });
+});
+
+// -- Reprocess task (rotate + re-OCR) --
+const reprocessRoute = createRoute({
+  method: "post",
+  path: "/tasks/{id}/reprocess",
+  tags: ["Tasks"],
+  summary: "Reprocess task",
+  description: "Re-run OCR on the task's file. Optionally rotate by a specific angle before re-processing. For PDFs, use page_index to only re-OCR a single page (results are merged back).",
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ description: "Task ID" }),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            rotate: z.number().optional().openapi({ description: "Rotation angle in degrees (90, 180, 270). Applied before OCR.", example: 90 }),
+            rotate_pages: z.array(z.number()).optional().openapi({ description: "For PDFs: page indices (0-based) to rotate. If omitted, rotates all pages." }),
+            page_index: z.number().optional().openapi({ description: "For PDFs: only re-OCR this single page (0-based). Results are merged into existing content." }),
+            backend: z.string().optional(),
+            lang: z.string().optional(),
+            parse_method: z.string().optional(),
+            formula_enable: z.boolean().optional(),
+            table_enable: z.boolean().optional(),
+            auto_rotate: z.boolean().optional(),
+            mineru_url: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Reprocessing started", content: { "application/json": { schema: z.object({ id: z.string(), status: z.string(), message: z.string() }) } } },
+    404: { description: "Not found", content: { "application/json": { schema: ErrorSchema } } },
+  },
+});
+
+app.openapi(reprocessRoute, async (c): Promise<any> => {
+  const task = stmt.getById.get(c.req.param("id")) as OcrTask | undefined;
+  if (!task) return c.json({ error: "Task not found" }, 404);
+
+  const filePath = join(UPLOAD_DIR, task.filename);
+  if (!existsSync(filePath)) return c.json({ error: "Source file not found" }, 404);
+
+  const body = c.req.valid("json");
+
+  // Rotate the file first if requested
+  if (body.rotate && body.rotate !== 0) {
+    await rotateFile(filePath, body.rotate, body.rotate_pages);
+  }
+
+  const options: ParseOptions = {
+    backend: body.backend || task.backend,
+    lang_list: [body.lang || task.lang],
+    parse_method: body.parse_method || undefined,
+    formula_enable: body.formula_enable ?? true,
+    table_enable: body.table_enable ?? true,
+    auto_rotate: body.auto_rotate ?? false,
+    mineru_url: body.mineru_url || undefined,
+  };
+
+  // Single-page re-OCR: process only that page, merge results
+  if (body.page_index !== undefined) {
+    options.start_page_id = body.page_index;
+    options.end_page_id = body.page_index;
+
+    stmt.setStatus.run({ $id: task.id, $status: "processing" });
+
+    // Run in background: parse single page, then merge
+    (async () => {
+      try {
+        const result = await parseFile(filePath, task.original_name, options);
+
+        // Merge: replace blocks for this page, keep blocks for other pages
+        const existingBlocks: ContentBlock[] = task.content_list ? JSON.parse(task.content_list) : [];
+        const otherBlocks = existingBlocks.filter((b) => (b.page_idx ?? 0) !== body.page_index);
+        const newBlocks = result.contentList.map((b) => ({ ...b, page_idx: body.page_index }));
+        const merged = [...otherBlocks, ...newBlocks].sort((a, b) => {
+          const pa = a.page_idx ?? 0;
+          const pb = b.page_idx ?? 0;
+          if (pa !== pb) return pa - pb;
+          return (a.bbox?.[1] ?? 0) - (b.bbox?.[1] ?? 0);
+        });
+
+        // Merge markdown: replace the page's section in result_md
+        const existingPages: { width: number; height: number }[] = task.pages ? JSON.parse(task.pages) : [];
+        if (result.pages.length > 0 && body.page_index! < existingPages.length) {
+          existingPages[body.page_index!] = result.pages[0]!;
+        }
+
+        // Rebuild markdown from merged blocks
+        const pageMds = new Map<number, string[]>();
+        for (const block of merged) {
+          const pi = block.page_idx ?? 0;
+          if (!pageMds.has(pi)) pageMds.set(pi, []);
+          if (block.text) pageMds.get(pi)!.push(block.text);
+          else if (block.list_items) pageMds.get(pi)!.push(block.list_items.map((li: string) => `- ${li}`).join("\n"));
+          else if (block.table_body) pageMds.get(pi)!.push(block.table_body);
+        }
+        const sortedPages = [...pageMds.keys()].sort((a, b) => a - b);
+        const newMd = sortedPages.map((pi) => pageMds.get(pi)!.join("\n\n")).join("\n\n---\n\n");
+
+        stmt.setResult.run({
+          $id: task.id,
+          $result_md: newMd,
+          $content_list: JSON.stringify(merged),
+          $pages: JSON.stringify(existingPages),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        stmt.setError.run({ $id: task.id, $error: message });
+      }
+    })();
+
+    return c.json({ id: task.id, status: "processing", message: `Re-OCR page ${body.page_index! + 1} started` });
+  }
+
+  // Full reprocess
+  stmt.setStatus.run({ $id: task.id, $status: "pending" });
+  processTask({ id: task.id, original_name: task.original_name }, filePath, options);
+
+  return c.json({ id: task.id, status: "pending", message: "Reprocessing started" });
 });
 
 // ============ OpenAPI Doc + Swagger UI ============

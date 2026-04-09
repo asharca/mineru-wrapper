@@ -11,14 +11,23 @@ import "react-pdf/dist/Page/TextLayer.css";
 import {
   ArrowLeft, Copy, Check, Loader2, ChevronLeft, ChevronRight,
   Download, FileText, LayoutList, PanelLeftClose, PanelLeft,
+  RotateCw, Pencil, Save, X, RefreshCw, CheckCircle,
 } from "lucide-react";
-import { getTask, fileUrl, type ContentBlock } from "../api.ts";
+import {
+  getTask, fileUrl, updateTaskContent, reprocessTask,
+  type ContentBlock, type OcrTask,
+} from "../api.ts";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -74,9 +83,10 @@ interface ImageOverlayProps {
   activeIndex: number | null;
   onHover: (i: number | null) => void;
   onClick: (i: number) => void;
+  rotation: number;
 }
 
-function ImageOverlay({ src, blocks, activeIndex, onHover, onClick }: ImageOverlayProps) {
+function ImageOverlay({ src, blocks, activeIndex, onHover, onClick, rotation }: ImageOverlayProps) {
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
@@ -98,11 +108,18 @@ function ImageOverlay({ src, blocks, activeIndex, onHover, onClick }: ImageOverl
     <TransformWrapper minScale={0.5} maxScale={8} initialScale={1} centerZoomedOut>
       <TransformComponent
         wrapperStyle={{ width: "100%", height: "100%", overflow: "auto" }}
-        contentStyle={{ width: "100%" }}
+        contentStyle={{ width: "100%", display: "flex", justifyContent: "center" }}
       >
-        <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height: "auto", display: "block" }}>
+        <svg
+          viewBox={`0 0 ${w} ${h}`}
+          style={{
+            width: "100%", height: "auto", display: "block",
+            transform: `rotate(${rotation}deg)`,
+            transition: "transform 0.3s ease",
+          }}
+        >
           <image href={src} x={0} y={0} width={w} height={h} />
-          {blocks.map((block, i) => {
+          {rotation === 0 && blocks.map((block, i) => {
             const [bx0, by0, bx1, by1] = block.bbox;
             const x0 = bx0 * sx, y0 = by0 * sy, x1 = bx1 * sx, y1 = by1 * sy;
             const isActive = activeIndex === i;
@@ -140,9 +157,17 @@ interface PdfViewerProps {
   pageHeights?: number[];
   currentPage: number;
   onPageChange: (page: number) => void;
+  pageRotation: number;
+  onRotate: () => void;
+  onConfirmRotate: () => void;
+  rotating: boolean;
 }
 
-function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pageHeights, currentPage, onPageChange }: PdfViewerProps) {
+function PdfViewer({
+  src, blocks, activeIndex, onHover, onClick,
+  pageWidths, pageHeights, currentPage, onPageChange,
+  pageRotation, onRotate, onConfirmRotate, rotating,
+}: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageSize, setPageSize] = useState<{ w: number; h: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -174,25 +199,72 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
 
   return (
     <div className="flex flex-col h-full" ref={containerRef}>
-      {numPages > 1 && (
-        <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-muted/50 border-b shrink-0">
-          <Button variant="ghost" size="icon" className="h-7 w-7"
-            disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-xs text-muted-foreground tabular-nums min-w-[60px] text-center">
-            {currentPage} / {numPages}
-          </span>
-          <Button variant="ghost" size="icon" className="h-7 w-7"
-            disabled={currentPage >= numPages} onClick={() => onPageChange(currentPage + 1)}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+      {numPages > 0 && (
+        <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-muted/50 border-b shrink-0 flex-wrap">
+          {numPages > 1 && (
+            <>
+              <Button variant="ghost" size="icon" className="h-7 w-7"
+                disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums min-w-[60px] text-center">
+                {currentPage} / {numPages}
+              </span>
+              <Button variant="ghost" size="icon" className="h-7 w-7"
+                disabled={currentPage >= numPages} onClick={() => onPageChange(currentPage + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Separator orientation="vertical" className="h-4 mx-1" />
+            </>
+          )}
+
+          {/* Rotate preview button */}
+          <Tooltip>
+            <TooltipTrigger>
+              <Button
+                variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                onClick={onRotate} disabled={rotating}
+              >
+                <RotateCw className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Rotate 90° (preview)</TooltipContent>
+          </Tooltip>
+
+          {/* Rotation indicator + confirm */}
+          {pageRotation > 0 && (
+            <>
+              <Badge variant="outline" className="text-[11px] h-6 gap-1">
+                {pageRotation}°
+              </Badge>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Button
+                    variant="default" size="sm"
+                    className="h-7 px-2.5 gap-1 text-xs"
+                    onClick={onConfirmRotate}
+                    disabled={rotating}
+                  >
+                    {rotating
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <CheckCircle className="h-3.5 w-3.5" />
+                    }
+                    Re-OCR this page
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Rotate and re-recognize this page only</TooltipContent>
+              </Tooltip>
+            </>
+          )}
+
+          <Separator orientation="vertical" className="h-4 mx-1" />
+
           <Tooltip>
             <TooltipTrigger>
               <a href={src} target="_blank" rel="noreferrer">
-                <Button variant="ghost" size="icon" className="h-7 w-7 ml-1 text-muted-foreground">
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
                   <Download className="h-4 w-4" />
                 </Button>
               </a>
@@ -208,7 +280,14 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
             <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading PDF...
           </div>
         }>
-          <div className="relative inline-block">
+          <div
+            className="relative inline-block"
+            style={{
+              transform: `rotate(${pageRotation}deg)`,
+              transition: "transform 0.3s ease",
+              transformOrigin: "center center",
+            }}
+          >
             <Page
               pageNumber={currentPage}
               width={containerWidth}
@@ -216,7 +295,8 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
               renderTextLayer={false}
               renderAnnotationLayer={false}
             />
-            {pageBlocks.length > 0 && pageSize && (
+            {/* Hide overlays when rotated (they won't match) */}
+            {pageRotation === 0 && pageBlocks.length > 0 && pageSize && (
               <svg
                 className="absolute top-0 left-0"
                 width={containerWidth}
@@ -260,14 +340,32 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
   );
 }
 
-// ---- Rendered document view (clean reading mode) ----
+// ---- Rendered document view ----
 
-function RenderedView({ blocks, resultMd }: { blocks: ContentBlock[]; resultMd: string | null }) {
+interface RenderedViewProps {
+  blocks: ContentBlock[];
+  resultMd: string | null;
+  editing: boolean;
+  editMd: string;
+  onEditMdChange: (md: string) => void;
+}
+
+function RenderedView({ blocks, resultMd, editing, editMd, onEditMdChange }: RenderedViewProps) {
+  if (editing) {
+    return (
+      <Textarea
+        value={editMd}
+        onChange={(e) => onEditMdChange(e.target.value)}
+        className="min-h-[600px] font-mono text-sm leading-relaxed resize-none"
+        placeholder="Edit markdown content..."
+      />
+    );
+  }
+
   if (blocks.length === 0 && !resultMd) {
     return <div className="text-center py-12 text-muted-foreground">No result</div>;
   }
 
-  // If we have result_md, render it as a single clean document
   if (resultMd) {
     return (
       <article className="rendered-md max-w-none prose-container">
@@ -276,7 +374,6 @@ function RenderedView({ blocks, resultMd }: { blocks: ContentBlock[]; resultMd: 
     );
   }
 
-  // Otherwise, concatenate blocks into a clean flow
   return (
     <article className="rendered-md max-w-none prose-container">
       {blocks.map((block, i) => {
@@ -307,23 +404,28 @@ function RenderedView({ blocks, resultMd }: { blocks: ContentBlock[]; resultMd: 
   );
 }
 
-// ---- Block view (structured regions) ----
+// ---- Block view ----
 
 interface BlockViewProps {
   blocks: ContentBlock[];
   activeBlock: number | null;
   blockRefs: React.RefObject<Map<number, HTMLDivElement>>;
   onBlockHover: (i: number | null) => void;
+  editing: boolean;
+  editBlocks: ContentBlock[];
+  onEditBlock: (index: number, text: string) => void;
 }
 
-function BlockView({ blocks, activeBlock, blockRefs, onBlockHover }: BlockViewProps) {
-  if (blocks.length === 0) {
+function BlockView({ blocks, activeBlock, blockRefs, onBlockHover, editing, editBlocks, onEditBlock }: BlockViewProps) {
+  const displayBlocks = editing ? editBlocks : blocks;
+
+  if (displayBlocks.length === 0) {
     return <div className="text-center py-12 text-muted-foreground">No regions detected</div>;
   }
 
   return (
     <div className="flex flex-col gap-1">
-      {blocks.map((block, i) => (
+      {displayBlocks.map((block, i) => (
         <div
           key={i}
           ref={(el) => { if (el) blockRefs.current.set(i, el); }}
@@ -336,7 +438,6 @@ function BlockView({ blocks, activeBlock, blockRefs, onBlockHover }: BlockViewPr
           onMouseEnter={() => onBlockHover(i)}
           onMouseLeave={() => onBlockHover(null)}
         >
-          {/* Minimal header: colored dot + type badge, copy on hover */}
           <div className="flex items-center gap-2 mb-1">
             <span
               className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-white shrink-0"
@@ -348,28 +449,45 @@ function BlockView({ blocks, activeBlock, blockRefs, onBlockHover }: BlockViewPr
             )}>
               {block.type}{block.text_level ? ` h${block.text_level}` : ""}
             </Badge>
-            {(block.text || block.list_items) && (
-              <span className="ml-auto opacity-0 group-hover/block:opacity-100 transition-opacity">
+            {!editing && (block.text || block.list_items) && (
+              <span className="ml-auto">
                 <CopyButton text={block.text || (block.list_items ?? []).join("\n")} />
               </span>
             )}
           </div>
 
-          {/* Content */}
-          <div className="text-sm leading-relaxed rendered-md pl-7">
-            {block.type === "image" ? (
-              block.img_url ? (
-                <img src={block.img_url} alt={block.img_path || "extracted image"}
-                  className="max-w-full h-auto rounded" />
-              ) : <em className="text-muted-foreground">(image region)</em>
-            ) : block.type === "table" && block.table_body ? (
-              <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: block.table_body }} />
-            ) : block.type === "list" && block.list_items ? (
-              <ul className="list-disc pl-5 space-y-1">
-                {block.list_items.map((item, li) => <li key={li}>{item}</li>)}
-              </ul>
+          <div className="text-sm leading-relaxed pl-7">
+            {editing && (block.type === "text" || block.type === "title" || block.type === "formula" || block.type === "interline_equation") ? (
+              <Textarea
+                value={block.text || ""}
+                onChange={(e) => onEditBlock(i, e.target.value)}
+                className="min-h-[40px] text-sm resize-none"
+                rows={Math.max(1, (block.text || "").split("\n").length)}
+              />
+            ) : editing && block.type === "list" && block.list_items ? (
+              <Textarea
+                value={block.list_items.join("\n")}
+                onChange={(e) => onEditBlock(i, e.target.value)}
+                className="min-h-[40px] text-sm resize-none"
+                rows={Math.max(1, block.list_items.length)}
+              />
             ) : (
-              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{block.text || ""}</Markdown>
+              <div className="rendered-md">
+                {block.type === "image" ? (
+                  block.img_url ? (
+                    <img src={block.img_url} alt={block.img_path || "extracted image"}
+                      className="max-w-full h-auto rounded" />
+                  ) : <em className="text-muted-foreground">(image region)</em>
+                ) : block.type === "table" && block.table_body ? (
+                  <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: block.table_body }} />
+                ) : block.type === "list" && block.list_items ? (
+                  <ul className="list-disc pl-5 space-y-1">
+                    {block.list_items.map((item, li) => <li key={li}>{item}</li>)}
+                  </ul>
+                ) : (
+                  <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{block.text || ""}</Markdown>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -391,13 +509,34 @@ const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secon
 
 export default function TaskDetail() {
   const { id } = useParams<{ id: string }>();
-  const [task, setTask] = useState<Awaited<ReturnType<typeof getTask>> | null>(null);
+  const [task, setTask] = useState<OcrTask | null>(null);
   const [error, setError] = useState("");
   const [activeBlock, setActiveBlock] = useState<number | null>(null);
   const [pdfPage, setPdfPage] = useState(1);
   const [viewMode, setViewMode] = useState<"document" | "blocks">("document");
   const [docPanelOpen, setDocPanelOpen] = useState(true);
   const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  // Edit state
+  const [editing, setEditing] = useState(false);
+  const [editMd, setEditMd] = useState("");
+  const [editBlocks, setEditBlocks] = useState<ContentBlock[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  // Rotation preview state (client-side only, no server call)
+  // For images: single rotation angle
+  // For PDFs: per-page rotation angles
+  const [imageRotation, setImageRotation] = useState(0);
+  const [pageRotations, setPageRotations] = useState<Record<number, number>>({});
+  const [rotating, setRotating] = useState(false);
+
+  // Re-OCR dialog
+  const [reprocessDialogOpen, setReprocessDialogOpen] = useState(false);
+
+  // File version key to force reload after server-side rotation
+  const [fileVersion, setFileVersion] = useState(0);
+
+  // ---- Polling ----
 
   useEffect(() => {
     if (!id) return;
@@ -425,7 +564,7 @@ export default function TaskDetail() {
 
   const goToBlock = useCallback((i: number) => {
     setActiveBlock(i);
-    setViewMode("blocks"); // switch to blocks view when clicking a region
+    setViewMode("blocks");
     scrollToBlock(i);
     const pageIdx = blocks[i]?.page_idx ?? 0;
     setPdfPage(pageIdx + 1);
@@ -443,6 +582,141 @@ export default function TaskDetail() {
       setPdfPage(pageIdx + 1);
     }
   }, [blocks]);
+
+  // ---- Edit handlers ----
+
+  const startEditing = () => {
+    setEditMd(task?.result_md || "");
+    setEditBlocks(blocks.map((b) => ({ ...b, list_items: b.list_items ? [...b.list_items] : undefined })));
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+  };
+
+  const saveEdits = async () => {
+    if (!task) return;
+    setSaving(true);
+    try {
+      if (viewMode === "document") {
+        const updated = await updateTaskContent(task.id, { result_md: editMd });
+        setTask(updated);
+      } else {
+        const updated = await updateTaskContent(task.id, { content_list: editBlocks });
+        setTask(updated);
+      }
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditBlock = (index: number, text: string) => {
+    setEditBlocks((prev) => {
+      const next = [...prev];
+      const block = { ...next[index] };
+      if (block.type === "list") {
+        block.list_items = text.split("\n");
+      } else {
+        block.text = text;
+      }
+      next[index] = block;
+      return next;
+    });
+  };
+
+  // ---- Rotation handlers (client-side preview only) ----
+
+  const handleRotateImage = () => {
+    setImageRotation((prev) => (prev + 90) % 360);
+  };
+
+  const handleRotatePdfPage = () => {
+    const pageIdx = pdfPage - 1;
+    setPageRotations((prev) => ({
+      ...prev,
+      [pageIdx]: ((prev[pageIdx] || 0) + 90) % 360,
+    }));
+  };
+
+  const currentPageRotation = pageRotations[pdfPage - 1] || 0;
+
+  // ---- Confirm rotation + re-OCR ----
+
+  const pollUntilDone = useCallback(async (taskId: string) => {
+    const t = await getTask(taskId);
+    setTask(t);
+    if (t.status === "pending" || t.status === "processing") {
+      setTimeout(() => pollUntilDone(taskId), 2000);
+    } else {
+      setFileVersion((v) => v + 1);
+      setRotating(false);
+    }
+  }, []);
+
+  const confirmRotateImage = async () => {
+    if (!task || imageRotation === 0) return;
+    setRotating(true);
+    setEditing(false);
+    try {
+      await reprocessTask(task.id, { rotate: imageRotation });
+      setTask({ ...task, status: "processing" } as OcrTask);
+      setImageRotation(0);
+      setTimeout(() => pollUntilDone(task.id), 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rotation failed");
+      setRotating(false);
+    }
+  };
+
+  const confirmRotatePdfPage = async () => {
+    if (!task) return;
+    const pageIdx = pdfPage - 1;
+    const angle = pageRotations[pageIdx] || 0;
+    if (angle === 0) return;
+
+    setRotating(true);
+    setEditing(false);
+    try {
+      await reprocessTask(task.id, {
+        rotate: angle,
+        rotate_pages: [pageIdx],
+        page_index: pageIdx,
+      });
+      setTask({ ...task, status: "processing" } as OcrTask);
+      // Clear this page's rotation preview
+      setPageRotations((prev) => {
+        const next = { ...prev };
+        delete next[pageIdx];
+        return next;
+      });
+      setTimeout(() => pollUntilDone(task.id), 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rotation failed");
+      setRotating(false);
+    }
+  };
+
+  // Full re-OCR (no rotation)
+  const handleReprocess = async () => {
+    if (!task) return;
+    setReprocessDialogOpen(false);
+    setRotating(true);
+    setEditing(false);
+    try {
+      await reprocessTask(task.id);
+      setTask({ ...task, status: "processing" } as OcrTask);
+      setTimeout(() => pollUntilDone(task.id), 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Reprocess failed");
+      setRotating(false);
+    }
+  };
+
+  // ---- Render ----
 
   if (error) return (
     <div className="p-6">
@@ -466,6 +740,8 @@ export default function TaskDetail() {
 
   const pageWidths = task.pages?.map((p) => p.width);
   const pageHeights = task.pages?.map((p) => p.height);
+
+  const fileSrc = fileUrl(task.filename) + `?v=${fileVersion}`;
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
@@ -499,52 +775,70 @@ export default function TaskDetail() {
 
         {/* View mode toggle */}
         <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5">
-          <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={viewMode === "document" ? "default" : "ghost"}
-                size="sm"
-                className="h-7 px-2.5 gap-1.5 text-xs"
-                onClick={() => setViewMode("document")}
-              >
-                <FileText className="h-3.5 w-3.5" />
-                Document
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Clean reading view</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={viewMode === "blocks" ? "default" : "ghost"}
-                size="sm"
-                className="h-7 px-2.5 gap-1.5 text-xs"
-                onClick={() => setViewMode("blocks")}
-              >
-                <LayoutList className="h-3.5 w-3.5" />
-                Blocks
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Structured region view</TooltipContent>
-          </Tooltip>
+          <Button
+            variant={viewMode === "document" ? "default" : "ghost"}
+            size="sm" className="h-7 px-2.5 gap-1.5 text-xs"
+            onClick={() => setViewMode("document")}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Document
+          </Button>
+          <Button
+            variant={viewMode === "blocks" ? "default" : "ghost"}
+            size="sm" className="h-7 px-2.5 gap-1.5 text-xs"
+            onClick={() => setViewMode("blocks")}
+          >
+            <LayoutList className="h-3.5 w-3.5" />
+            Blocks
+          </Button>
         </div>
 
-        {/* Toggle document panel */}
-        <Tooltip>
-          <TooltipTrigger>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground"
-              onClick={() => setDocPanelOpen(!docPanelOpen)}
-            >
-              {docPanelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{docPanelOpen ? "Hide original" : "Show original"}</TooltipContent>
-        </Tooltip>
+        <Separator orientation="vertical" className="h-5" />
 
-        <CopyButton text={task.result_md || ""} label="Copy MD" />
+        {/* Edit / Save / Cancel */}
+        {task.status === "completed" && !editing && (
+          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={startEditing}>
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Button>
+        )}
+        {editing && (
+          <>
+            <Button
+              variant="default" size="sm" className="h-7 gap-1.5 text-xs"
+              onClick={saveEdits} disabled={saving}
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Save
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={cancelEditing}>
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </Button>
+          </>
+        )}
+
+        {/* Re-OCR (full) */}
+        {task.status === "completed" && !editing && (
+          <Button
+            variant="outline" size="sm" className="h-7 gap-1.5 text-xs"
+            onClick={() => setReprocessDialogOpen(true)}
+            disabled={rotating}
+          >
+            {rotating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Re-OCR
+          </Button>
+        )}
+
+        {/* Toggle document panel */}
+        <Button
+          variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
+          onClick={() => setDocPanelOpen(!docPanelOpen)}
+        >
+          {docPanelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+        </Button>
+
+        {!editing && <CopyButton text={task.result_md || ""} label="Copy MD" />}
       </div>
 
       {/* Processing / error states */}
@@ -566,23 +860,71 @@ export default function TaskDetail() {
         <div className="flex-1 overflow-hidden">
           {docPanelOpen ? (
             <Allotment defaultSizes={[35, 65]}>
-              {/* Document panel (smaller) */}
               <Allotment.Pane minSize={200}>
                 <div className="flex flex-col h-full border-r">
+                  {/* Image toolbar */}
+                  {isImage && (
+                    <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-muted/50 border-b shrink-0">
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Button
+                            variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                            onClick={handleRotateImage} disabled={rotating}
+                          >
+                            <RotateCw className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Rotate 90° (preview)</TooltipContent>
+                      </Tooltip>
+
+                      {imageRotation > 0 && (
+                        <>
+                          <Badge variant="outline" className="text-[11px] h-6 gap-1">{imageRotation}°</Badge>
+                          <Button
+                            variant="default" size="sm" className="h-7 px-2.5 gap-1 text-xs"
+                            onClick={confirmRotateImage} disabled={rotating}
+                          >
+                            {rotating
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <CheckCircle className="h-3.5 w-3.5" />
+                            }
+                            Re-OCR
+                          </Button>
+                        </>
+                      )}
+
+                      <Separator orientation="vertical" className="h-4 mx-1" />
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <a href={fileSrc} target="_blank" rel="noreferrer">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </a>
+                        </TooltipTrigger>
+                        <TooltipContent>Download image</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )}
                   <div className="flex-1 overflow-auto relative bg-muted/30">
                     {isImage ? (
-                      <ImageOverlay src={fileUrl(task.filename)} blocks={blocks}
+                      <ImageOverlay src={fileSrc} blocks={blocks}
                         activeIndex={activeBlock} onHover={handleHover} onClick={goToBlock}
+                        rotation={imageRotation}
                       />
                     ) : isPdf ? (
-                      <PdfViewer src={fileUrl(task.filename)} blocks={blocks}
+                      <PdfViewer src={fileSrc} blocks={blocks}
                         activeIndex={activeBlock} onHover={handleHover} onClick={goToBlock}
                         pageWidths={pageWidths} pageHeights={pageHeights}
                         currentPage={pdfPage} onPageChange={setPdfPage}
+                        pageRotation={currentPageRotation}
+                        onRotate={handleRotatePdfPage}
+                        onConfirmRotate={confirmRotatePdfPage}
+                        rotating={rotating}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                        <a href={fileUrl(task.filename)} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                        <a href={fileSrc} target="_blank" rel="noreferrer" className="text-primary hover:underline">
                           Download file
                         </a>
                       </div>
@@ -591,7 +933,6 @@ export default function TaskDetail() {
                 </div>
               </Allotment.Pane>
 
-              {/* Content panel (larger) */}
               <Allotment.Pane minSize={300}>
                 <div className="h-full overflow-auto">
                   <div className={cn(
@@ -599,13 +940,15 @@ export default function TaskDetail() {
                     viewMode === "document" ? "max-w-3xl px-8 py-6" : "max-w-4xl px-4 py-3"
                   )}>
                     {viewMode === "document" ? (
-                      <RenderedView blocks={blocks} resultMd={task.result_md} />
+                      <RenderedView
+                        blocks={blocks} resultMd={task.result_md}
+                        editing={editing} editMd={editMd} onEditMdChange={setEditMd}
+                      />
                     ) : (
                       <BlockView
-                        blocks={blocks}
-                        activeBlock={activeBlock}
-                        blockRefs={blockRefs}
+                        blocks={blocks} activeBlock={activeBlock} blockRefs={blockRefs}
                         onBlockHover={handleBlockHover}
+                        editing={editing} editBlocks={editBlocks} onEditBlock={handleEditBlock}
                       />
                     )}
                   </div>
@@ -613,20 +956,21 @@ export default function TaskDetail() {
               </Allotment.Pane>
             </Allotment>
           ) : (
-            /* Full-width content when document panel is hidden */
             <div className="h-full overflow-auto">
               <div className={cn(
                 "mx-auto",
                 viewMode === "document" ? "max-w-3xl px-8 py-6" : "max-w-4xl px-4 py-3"
               )}>
                 {viewMode === "document" ? (
-                  <RenderedView blocks={blocks} resultMd={task.result_md} />
+                  <RenderedView
+                    blocks={blocks} resultMd={task.result_md}
+                    editing={editing} editMd={editMd} onEditMdChange={setEditMd}
+                  />
                 ) : (
                   <BlockView
-                    blocks={blocks}
-                    activeBlock={activeBlock}
-                    blockRefs={blockRefs}
+                    blocks={blocks} activeBlock={activeBlock} blockRefs={blockRefs}
                     onBlockHover={handleBlockHover}
+                    editing={editing} editBlocks={editBlocks} onEditBlock={handleEditBlock}
                   />
                 )}
               </div>
@@ -634,6 +978,22 @@ export default function TaskDetail() {
           )}
         </div>
       )}
+
+      {/* Re-OCR confirmation dialog */}
+      <Dialog open={reprocessDialogOpen} onOpenChange={setReprocessDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Re-run OCR</DialogTitle>
+            <DialogDescription>
+              This will re-process the entire document. The current recognized content will be replaced with new results.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReprocessDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleReprocess}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

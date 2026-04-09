@@ -41,10 +41,12 @@ export interface ContentBlock {
   type: string;
   bbox: [number, number, number, number];
   text?: string;
+  text_level?: number;
   page_idx?: number;
   img_path?: string;
   img_url?: string;
   table_body?: string;
+  list_items?: string[];
 }
 
 export interface OcrTask {
@@ -79,6 +81,9 @@ export const stmt = {
   ),
   setResult: db.prepare(
     `UPDATE tasks SET status='completed', result_md=$result_md, content_list=$content_list, pages=$pages, completed_at=datetime('now') WHERE id=$id`
+  ),
+  updateContent: db.prepare(
+    `UPDATE tasks SET result_md=$result_md, content_list=$content_list WHERE id=$id`
   ),
   setError: db.prepare(
     `UPDATE tasks SET status='failed', error=$error, completed_at=datetime('now') WHERE id=$id`

@@ -92,3 +92,42 @@ export async function deleteTask(id: string): Promise<void> {
   const res = await fetch(`/tasks/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
 }
+
+export async function updateTaskContent(
+  id: string,
+  updates: { result_md?: string; content_list?: ContentBlock[] }
+): Promise<OcrTask> {
+  const res = await fetch(`/tasks/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export interface ReprocessOptions {
+  rotate?: number;
+  rotate_pages?: number[];
+  page_index?: number;
+  backend?: string;
+  lang?: string;
+  parse_method?: string;
+  formula_enable?: boolean;
+  table_enable?: boolean;
+  auto_rotate?: boolean;
+  mineru_url?: string;
+}
+
+export async function reprocessTask(
+  id: string,
+  options: ReprocessOptions = {}
+): Promise<{ id: string; status: string; message: string }> {
+  const res = await fetch(`/tasks/${id}/reprocess`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
