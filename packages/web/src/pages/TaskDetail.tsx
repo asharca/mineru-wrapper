@@ -8,11 +8,21 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import { ArrowLeft, Copy, Check, Loader2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import {
+  ArrowLeft, Copy, Check, Loader2, ChevronLeft, ChevronRight,
+  Download, FileText, LayoutList, PanelLeftClose, PanelLeft,
+} from "lucide-react";
 import { getTask, fileUrl, type ContentBlock } from "../api.ts";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
+// ---- Copy button ----
 
 function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -23,20 +33,27 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
     });
   };
   return (
-    <button
-      onClick={handleCopy}
-      className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border transition-colors",
-        copied
-          ? "bg-success text-white border-success"
-          : "bg-white text-muted-foreground border-border hover:bg-muted"
-      )}
-    >
-      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-      {copied ? "Copied!" : label}
-    </button>
+    <Tooltip>
+      <TooltipTrigger>
+        <Button
+          variant={copied ? "default" : "outline"}
+          size="sm"
+          className={cn(
+            "h-6 px-2 text-[11px] gap-1",
+            copied && "bg-success text-success-foreground hover:bg-success/90"
+          )}
+          onClick={handleCopy}
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied!" : label}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Copy to clipboard</TooltipContent>
+    </Tooltip>
   );
 }
+
+// ---- Block type colors ----
 
 const TYPE_COLORS: Record<string, string> = {
   text: "#3b82f6", title: "#ef4444", table: "#22c55e",
@@ -49,7 +66,7 @@ function typeColor(type: string): string {
   return TYPE_COLORS[type] || "#6b7280";
 }
 
-// ---- Image overlay (unchanged) ----
+// ---- Image overlay ----
 
 interface ImageOverlayProps {
   src: string;
@@ -138,16 +155,13 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
     setPageSize({ w: page.width, h: page.height });
   };
 
-  // Filter blocks for current page
   const pageBlocks = blocks.filter((b) => (b.page_idx ?? 0) === currentPage - 1);
 
-  // Get page dimensions from task metadata or rendered page
   const pw = pageWidths?.[currentPage - 1];
   const ph = pageHeights?.[currentPage - 1];
   const overlayW = pw || pageSize?.w || 1;
   const overlayH = ph || pageSize?.h || 1;
 
-  // Container width for responsive sizing
   const [containerWidth, setContainerWidth] = useState(600);
   useEffect(() => {
     if (!containerRef.current) return;
@@ -160,43 +174,38 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
 
   return (
     <div className="flex flex-col h-full" ref={containerRef}>
-      {/* Page navigation */}
       {numPages > 1 && (
-        <div className="flex items-center justify-center gap-2 py-1.5 px-3 bg-slate-50 border-b border-border shrink-0">
-          <button
-            disabled={currentPage <= 1}
-            onClick={() => onPageChange(currentPage - 1)}
-            className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
+        <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-muted/50 border-b shrink-0">
+          <Button variant="ghost" size="icon" className="h-7 w-7"
+            disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}
           >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-xs text-muted-foreground min-w-[60px] text-center">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground tabular-nums min-w-[60px] text-center">
             {currentPage} / {numPages}
           </span>
-          <button
-            disabled={currentPage >= numPages}
-            onClick={() => onPageChange(currentPage + 1)}
-            className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
+          <Button variant="ghost" size="icon" className="h-7 w-7"
+            disabled={currentPage >= numPages} onClick={() => onPageChange(currentPage + 1)}
           >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <a
-            href={src}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-2 p-1 rounded hover:bg-muted text-muted-foreground transition-colors"
-            title="Download PDF"
-          >
-            <Download className="w-4 h-4" />
-          </a>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Tooltip>
+            <TooltipTrigger>
+              <a href={src} target="_blank" rel="noreferrer">
+                <Button variant="ghost" size="icon" className="h-7 w-7 ml-1 text-muted-foreground">
+                  <Download className="h-4 w-4" />
+                </Button>
+              </a>
+            </TooltipTrigger>
+            <TooltipContent>Download PDF</TooltipContent>
+          </Tooltip>
         </div>
       )}
 
-      {/* PDF page + overlay */}
       <div className="flex-1 overflow-auto">
         <Document file={src} onLoadSuccess={onDocumentLoadSuccess} loading={
           <div className="flex items-center justify-center h-full text-muted-foreground">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading PDF...
+            <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading PDF...
           </div>
         }>
           <div className="relative inline-block">
@@ -207,7 +216,6 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
               renderTextLayer={false}
               renderAnnotationLayer={false}
             />
-            {/* Bbox overlay on top of PDF page */}
             {pageBlocks.length > 0 && pageSize && (
               <svg
                 className="absolute top-0 left-0"
@@ -216,7 +224,7 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
                 viewBox={`0 0 ${overlayW} ${overlayH}`}
                 style={{ pointerEvents: "none" }}
               >
-                {pageBlocks.map((block, _ri) => {
+                {pageBlocks.map((block) => {
                   const globalIdx = blocks.indexOf(block);
                   const [bx0, by0, bx1, by1] = block.bbox;
                   const sx = overlayW / 1000;
@@ -252,14 +260,134 @@ function PdfViewer({ src, blocks, activeIndex, onHover, onClick, pageWidths, pag
   );
 }
 
-// ---- Main component ----
+// ---- Rendered document view (clean reading mode) ----
 
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending: { label: "Pending", className: "text-muted-foreground" },
-  processing: { label: "Processing", className: "text-warning" },
-  completed: { label: "Completed", className: "text-success" },
-  failed: { label: "Failed", className: "text-destructive" },
+function RenderedView({ blocks, resultMd }: { blocks: ContentBlock[]; resultMd: string | null }) {
+  if (blocks.length === 0 && !resultMd) {
+    return <div className="text-center py-12 text-muted-foreground">No result</div>;
+  }
+
+  // If we have result_md, render it as a single clean document
+  if (resultMd) {
+    return (
+      <article className="rendered-md max-w-none prose-container">
+        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{resultMd}</Markdown>
+      </article>
+    );
+  }
+
+  // Otherwise, concatenate blocks into a clean flow
+  return (
+    <article className="rendered-md max-w-none prose-container">
+      {blocks.map((block, i) => {
+        if (block.type === "image") {
+          return block.img_url ? (
+            <figure key={i} className="my-4">
+              <img src={block.img_url} alt={block.img_path || "extracted image"} className="max-w-full h-auto rounded-lg" />
+            </figure>
+          ) : null;
+        }
+        if (block.type === "table" && block.table_body) {
+          return <div key={i} className="overflow-x-auto my-4" dangerouslySetInnerHTML={{ __html: block.table_body }} />;
+        }
+        if (block.type === "list" && block.list_items) {
+          return (
+            <ul key={i} className="list-disc pl-6 space-y-1 my-3">
+              {block.list_items.map((item, li) => <li key={li}>{item}</li>)}
+            </ul>
+          );
+        }
+        return (
+          <Markdown key={i} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+            {block.text || ""}
+          </Markdown>
+        );
+      })}
+    </article>
+  );
+}
+
+// ---- Block view (structured regions) ----
+
+interface BlockViewProps {
+  blocks: ContentBlock[];
+  activeBlock: number | null;
+  blockRefs: React.RefObject<Map<number, HTMLDivElement>>;
+  onBlockHover: (i: number | null) => void;
+}
+
+function BlockView({ blocks, activeBlock, blockRefs, onBlockHover }: BlockViewProps) {
+  if (blocks.length === 0) {
+    return <div className="text-center py-12 text-muted-foreground">No regions detected</div>;
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {blocks.map((block, i) => (
+        <div
+          key={i}
+          ref={(el) => { if (el) blockRefs.current.set(i, el); }}
+          className={cn(
+            "px-4 py-3 rounded-lg border transition-all",
+            activeBlock === i
+              ? "bg-primary/5 border-primary/40 shadow-sm"
+              : "border-transparent hover:bg-muted/50"
+          )}
+          onMouseEnter={() => onBlockHover(i)}
+          onMouseLeave={() => onBlockHover(null)}
+        >
+          {/* Minimal header: colored dot + type badge, copy on hover */}
+          <div className="flex items-center gap-2 mb-1">
+            <span
+              className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-white shrink-0"
+              style={{ background: typeColor(block.type) }}
+            >{i + 1}</span>
+            <Badge variant="secondary" className={cn(
+              "text-[10px] font-semibold uppercase px-1.5 py-0",
+              `block-type-${block.type}`
+            )}>
+              {block.type}{block.text_level ? ` h${block.text_level}` : ""}
+            </Badge>
+            {(block.text || block.list_items) && (
+              <span className="ml-auto opacity-0 group-hover/block:opacity-100 transition-opacity">
+                <CopyButton text={block.text || (block.list_items ?? []).join("\n")} />
+              </span>
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="text-sm leading-relaxed rendered-md pl-7">
+            {block.type === "image" ? (
+              block.img_url ? (
+                <img src={block.img_url} alt={block.img_path || "extracted image"}
+                  className="max-w-full h-auto rounded" />
+              ) : <em className="text-muted-foreground">(image region)</em>
+            ) : block.type === "table" && block.table_body ? (
+              <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: block.table_body }} />
+            ) : block.type === "list" && block.list_items ? (
+              <ul className="list-disc pl-5 space-y-1">
+                {block.list_items.map((item, li) => <li key={li}>{item}</li>)}
+              </ul>
+            ) : (
+              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{block.text || ""}</Markdown>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---- Status config ----
+
+const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  pending: { label: "Pending", variant: "secondary" },
+  processing: { label: "Processing", variant: "outline" },
+  completed: { label: "Completed", variant: "default" },
+  failed: { label: "Failed", variant: "destructive" },
 };
+
+// ---- Main component ----
 
 export default function TaskDetail() {
   const { id } = useParams<{ id: string }>();
@@ -267,6 +395,8 @@ export default function TaskDetail() {
   const [error, setError] = useState("");
   const [activeBlock, setActiveBlock] = useState<number | null>(null);
   const [pdfPage, setPdfPage] = useState(1);
+  const [viewMode, setViewMode] = useState<"document" | "blocks">("document");
+  const [docPanelOpen, setDocPanelOpen] = useState(true);
   const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   useEffect(() => {
@@ -295,23 +425,39 @@ export default function TaskDetail() {
 
   const goToBlock = useCallback((i: number) => {
     setActiveBlock(i);
+    setViewMode("blocks"); // switch to blocks view when clicking a region
     scrollToBlock(i);
-    // Navigate PDF to the block's page
     const pageIdx = blocks[i]?.page_idx ?? 0;
     setPdfPage(pageIdx + 1);
   }, [scrollToBlock, blocks]);
 
   const handleHover = useCallback((i: number | null) => {
     setActiveBlock(i);
+    if (i !== null && viewMode === "blocks") scrollToBlock(i);
+  }, [scrollToBlock, viewMode]);
+
+  const handleBlockHover = useCallback((i: number | null) => {
+    setActiveBlock(i);
     if (i !== null) {
-      scrollToBlock(i);
       const pageIdx = blocks[i]?.page_idx ?? 0;
       setPdfPage(pageIdx + 1);
     }
-  }, [scrollToBlock, blocks]);
+  }, [blocks]);
 
-  if (error) return <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-destructive text-sm">{error}</div>;
-  if (!task) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
+  if (error) return (
+    <div className="p-6">
+      <Alert variant="destructive">
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    </div>
+  );
+
+  if (!task) return (
+    <div className="flex items-center justify-center h-[calc(100vh-3.5rem)] text-muted-foreground gap-2">
+      <Loader2 className="h-5 w-5 animate-spin" />
+      Loading...
+    </div>
+  );
 
   const isProcessing = task.status === "pending" || task.status === "processing";
   const isImage = /\.(png|jpe?g|gif|bmp|tiff)$/i.test(task.filename);
@@ -322,136 +468,170 @@ export default function TaskDetail() {
   const pageHeights = task.pages?.map((p) => p.height);
 
   return (
-    <div>
-      <div className="mb-5">
-        <Link to="/history" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors mb-2">
-          <ArrowLeft className="w-4 h-4" /> Back
+    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+      {/* Compact top bar */}
+      <div className="flex items-center gap-3 px-4 py-2 border-b bg-background shrink-0">
+        <Link to="/history">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
         </Link>
-        <h2 className="text-xl font-semibold break-all">{task.original_name}</h2>
-        <div className="flex flex-wrap items-center gap-2 mt-1.5 text-sm">
-          <span className={cn("font-medium", status.className)}>{status.label}</span>
-          <span className={cn(
-            "px-2 py-0.5 rounded-full text-[11px] font-semibold",
-            task.source === "web" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
-          )}>{task.source.toUpperCase()}</span>
-          <span className="text-muted-foreground">{task.backend}</span>
-          <span className="text-muted-foreground">Lang: {task.lang}</span>
-          {blocks.length > 0 && <span className="text-muted-foreground">{blocks.length} regions</span>}
+
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <h2 className="text-sm font-semibold truncate">{task.original_name}</h2>
+          <Badge
+            variant={status.variant}
+            className={cn(
+              "shrink-0",
+              task.status === "processing" && "border-warning text-warning",
+              task.status === "completed" && "border-success text-success bg-success/10"
+            )}
+          >
+            {status.label}
+          </Badge>
+          <span className="text-xs text-muted-foreground shrink-0">{task.backend}</span>
+          {blocks.length > 0 && (
+            <span className="text-xs text-muted-foreground shrink-0">{blocks.length} regions</span>
+          )}
         </div>
+
+        <Separator orientation="vertical" className="h-5" />
+
+        {/* View mode toggle */}
+        <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5">
+          <Tooltip>
+            <TooltipTrigger>
+              <Button
+                variant={viewMode === "document" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 px-2.5 gap-1.5 text-xs"
+                onClick={() => setViewMode("document")}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Document
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Clean reading view</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger>
+              <Button
+                variant={viewMode === "blocks" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 px-2.5 gap-1.5 text-xs"
+                onClick={() => setViewMode("blocks")}
+              >
+                <LayoutList className="h-3.5 w-3.5" />
+                Blocks
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Structured region view</TooltipContent>
+          </Tooltip>
+        </div>
+
+        {/* Toggle document panel */}
+        <Tooltip>
+          <TooltipTrigger>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground"
+              onClick={() => setDocPanelOpen(!docPanelOpen)}
+            >
+              {docPanelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{docPanelOpen ? "Hide original" : "Show original"}</TooltipContent>
+        </Tooltip>
+
+        <CopyButton text={task.result_md || ""} label="Copy MD" />
       </div>
 
+      {/* Processing / error states */}
       {isProcessing && (
-        <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg mb-4">
-          <Loader2 className="w-5 h-5 text-warning animate-spin" />
-          <span className="text-sm">Processing...</span>
-        </div>
+        <Alert className="mx-4 mt-3 border-warning/50 bg-warning/5">
+          <Loader2 className="h-4 w-4 animate-spin text-warning" />
+          <AlertDescription>Processing your document...</AlertDescription>
+        </Alert>
       )}
 
       {task.status === "failed" && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-destructive text-sm mb-4">{task.error}</div>
+        <Alert variant="destructive" className="mx-4 mt-3">
+          <AlertDescription>{task.error}</AlertDescription>
+        </Alert>
       )}
 
+      {/* Main content area */}
       {task.status === "completed" && (
-        <div className="h-[calc(100vh-200px)] min-h-[500px] border border-border rounded-lg overflow-hidden bg-white">
-          <Allotment defaultSizes={[50, 50]}>
-            <Allotment.Pane minSize={250}>
-              <div className="flex flex-col h-full">
-                <div className="px-4 py-2 text-xs font-semibold uppercase text-muted-foreground bg-muted border-b border-border shrink-0">
-                  Original Document
+        <div className="flex-1 overflow-hidden">
+          {docPanelOpen ? (
+            <Allotment defaultSizes={[35, 65]}>
+              {/* Document panel (smaller) */}
+              <Allotment.Pane minSize={200}>
+                <div className="flex flex-col h-full border-r">
+                  <div className="flex-1 overflow-auto relative bg-muted/30">
+                    {isImage ? (
+                      <ImageOverlay src={fileUrl(task.filename)} blocks={blocks}
+                        activeIndex={activeBlock} onHover={handleHover} onClick={goToBlock}
+                      />
+                    ) : isPdf ? (
+                      <PdfViewer src={fileUrl(task.filename)} blocks={blocks}
+                        activeIndex={activeBlock} onHover={handleHover} onClick={goToBlock}
+                        pageWidths={pageWidths} pageHeights={pageHeights}
+                        currentPage={pdfPage} onPageChange={setPdfPage}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                        <a href={fileUrl(task.filename)} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                          Download file
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1 overflow-auto relative">
-                  {isImage ? (
-                    <ImageOverlay src={fileUrl(task.filename)} blocks={blocks}
-                      activeIndex={activeBlock} onHover={handleHover}
-                      onClick={goToBlock}
-                    />
-                  ) : isPdf ? (
-                    <PdfViewer src={fileUrl(task.filename)} blocks={blocks}
-                      activeIndex={activeBlock} onHover={handleHover}
-                      onClick={goToBlock}
-                      pageWidths={pageWidths} pageHeights={pageHeights}
-                      currentPage={pdfPage} onPageChange={setPdfPage}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                      <a href={fileUrl(task.filename)} target="_blank" rel="noreferrer" className="text-primary hover:underline">Download file</a>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Allotment.Pane>
+              </Allotment.Pane>
 
-            <Allotment.Pane minSize={250}>
-              <div className="flex flex-col h-full">
-                <div className="px-4 py-2 text-xs font-semibold uppercase text-muted-foreground bg-muted border-b border-border shrink-0 flex items-center justify-between">
-                  Parsed Result
-                  <CopyButton text={task.result_md || ""} label="Copy MD" />
+              {/* Content panel (larger) */}
+              <Allotment.Pane minSize={300}>
+                <div className="h-full overflow-auto">
+                  <div className={cn(
+                    "mx-auto",
+                    viewMode === "document" ? "max-w-3xl px-8 py-6" : "max-w-4xl px-4 py-3"
+                  )}>
+                    {viewMode === "document" ? (
+                      <RenderedView blocks={blocks} resultMd={task.result_md} />
+                    ) : (
+                      <BlockView
+                        blocks={blocks}
+                        activeBlock={activeBlock}
+                        blockRefs={blockRefs}
+                        onBlockHover={handleBlockHover}
+                      />
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1 overflow-auto p-4">
-                  {blocks.length > 0 ? (
-                    <div className="flex flex-col gap-1.5">
-                      {blocks.map((block, i) => (
-                        <div
-                          key={i}
-                          ref={(el) => { if (el) blockRefs.current.set(i, el); }}
-                          className={cn(
-                            "p-3 rounded-md border transition-all",
-                            activeBlock === i
-                              ? "bg-blue-50 border-primary shadow-[0_0_0_1px] shadow-primary"
-                              : "border-border hover:bg-blue-50/50 hover:border-primary/50"
-                          )}
-                          onMouseEnter={() => goToBlock(i)}
-                          onMouseLeave={() => setActiveBlock(null)}
-                        >
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-white shrink-0"
-                              style={{ background: typeColor(block.type) }}
-                            >{i + 1}</span>
-                            <span className={cn(
-                              "px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase",
-                              `block-type-${block.type}`
-                            )}>
-                              {block.type}{block.text_level ? ` h${block.text_level}` : ""}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground font-mono opacity-60">
-                              [{block.bbox.join(", ")}]
-                            </span>
-                            {(block.text || block.list_items) && (
-                              <span className="ml-auto">
-                                <CopyButton text={block.text || (block.list_items ?? []).join("\n")} />
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-sm leading-relaxed rendered-md">
-                            {block.type === "image" ? (
-                              block.img_url ? (
-                                <img src={block.img_url} alt={block.img_path || "extracted image"}
-                                  className="max-w-full h-auto rounded" />
-                              ) : <em className="text-muted-foreground">(image region)</em>
-                            ) : block.type === "table" && block.table_body ? (
-                              <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: block.table_body }} />
-                            ) : block.type === "list" && block.list_items ? (
-                              <ul className="list-disc pl-5 space-y-1">
-                                {block.list_items.map((item, li) => (
-                                  <li key={li}>{item}</li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{block.text || ""}</Markdown>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : task.result_md ? (
-                    <div className="rendered-md"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{task.result_md}</Markdown></div>
-                  ) : (
-                    <div className="text-center py-12 text-muted-foreground">No result</div>
-                  )}
-                </div>
+              </Allotment.Pane>
+            </Allotment>
+          ) : (
+            /* Full-width content when document panel is hidden */
+            <div className="h-full overflow-auto">
+              <div className={cn(
+                "mx-auto",
+                viewMode === "document" ? "max-w-3xl px-8 py-6" : "max-w-4xl px-4 py-3"
+              )}>
+                {viewMode === "document" ? (
+                  <RenderedView blocks={blocks} resultMd={task.result_md} />
+                ) : (
+                  <BlockView
+                    blocks={blocks}
+                    activeBlock={activeBlock}
+                    blockRefs={blockRefs}
+                    onBlockHover={handleBlockHover}
+                  />
+                )}
               </div>
-            </Allotment.Pane>
-          </Allotment>
+            </div>
+          )}
         </div>
       )}
     </div>

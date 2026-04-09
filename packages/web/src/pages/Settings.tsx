@@ -1,5 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import {
   BACKENDS,
   LANGS,
@@ -19,48 +32,18 @@ const DEFAULTS: OcrSettings = {
   mineru_url: "",
 };
 
-function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={`
-        relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0
-        ${checked ? "bg-primary" : "bg-slate-200"}
-      `}
-    >
-      <span
-        className={`
-          inline-block h-4 w-4 rounded-full bg-white transition-transform shadow-sm
-          ${checked ? "translate-x-6" : "translate-x-1"}
-        `}
-      />
-      <span className="sr-only">{label}</span>
-    </button>
-  );
-}
-
 interface SettingRowProps {
   name: string;
   hint: string;
+  htmlFor?: string;
   children: React.ReactNode;
 }
 
-function SettingRow({ name, hint, children }: SettingRowProps) {
+function SettingRow({ name, hint, htmlFor, children }: SettingRowProps) {
   return (
-    <div className="flex items-center justify-between px-5 py-4 border-b border-border last:border-b-0">
+    <div className="flex items-center justify-between py-4">
       <div className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium">{name}</span>
+        <Label htmlFor={htmlFor} className="text-sm font-medium">{name}</Label>
         <span className="text-xs text-muted-foreground">{hint}</span>
       </div>
       {children}
@@ -68,41 +51,10 @@ function SettingRow({ name, hint, children }: SettingRowProps) {
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-6 mb-2 first:mt-0">
-      {children}
-    </h3>
-  );
-}
-
-function SelectField({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: readonly { value: string; label: string }[];
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="px-3 py-2 border border-border rounded-lg text-sm bg-muted min-w-[280px]"
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-    </select>
-  );
-}
-
 export default function SettingsPage() {
   const [settings, setSettings] = useState<OcrSettings>(loadSettings);
   const [saved, setSaved] = useState(false);
 
-  // Auto-save on change
   const update = useCallback(<K extends keyof OcrSettings>(key: K, value: OcrSettings[K]) => {
     setSettings((prev) => {
       const next = { ...prev, [key]: value };
@@ -112,7 +64,6 @@ export default function SettingsPage() {
     setSaved(true);
   }, []);
 
-  // Clear "saved" indicator after delay
   useEffect(() => {
     if (!saved) return;
     const t = setTimeout(() => setSaved(false), 1500);
@@ -128,76 +79,167 @@ export default function SettingsPage() {
   return (
     <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-xl font-semibold">Settings</h2>
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Settings</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Configure default OCR options. Changes are saved automatically.
+          </p>
+        </div>
         <div className="flex items-center gap-3">
           {saved && (
-            <span className="text-xs text-success font-medium animate-in fade-in">
+            <span className="inline-flex items-center gap-1 text-xs text-success font-medium animate-in fade-in">
+              <Check className="h-3 w-3" />
               Saved
             </span>
           )}
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-border text-muted-foreground hover:bg-muted transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
+          <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5">
+            <RotateCcw className="h-3.5 w-3.5" />
             Reset
-          </button>
+          </Button>
         </div>
       </div>
-      <p className="text-sm text-muted-foreground mb-6">
-        Configure default OCR options. Changes are saved automatically.
-      </p>
 
-      <SectionTitle>Service</SectionTitle>
-      <div className="bg-white border border-border rounded-lg">
-        <SettingRow name="MineRU API URL" hint="Leave empty to use server default">
-          <input
-            type="text"
-            placeholder="http://10.0.10.2:8001"
-            value={settings.mineru_url}
-            onChange={(e) => update("mineru_url", e.target.value.trim())}
-            className="px-3 py-2 border border-border rounded-lg text-sm bg-muted min-w-[280px] placeholder:text-muted-foreground/60"
-          />
-        </SettingRow>
-      </div>
+      <div className="mt-8 space-y-6">
+        {/* Service */}
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Service
+          </h3>
+          <Card>
+            <CardContent className="px-5 py-1">
+              <SettingRow name="MineRU API URL" hint="Leave empty to use server default" htmlFor="mineru-url">
+                <Input
+                  id="mineru-url"
+                  type="text"
+                  placeholder="http://10.0.10.2:8001"
+                  value={settings.mineru_url}
+                  onChange={(e) => update("mineru_url", e.target.value.trim())}
+                  className="min-w-[280px]"
+                />
+              </SettingRow>
+            </CardContent>
+          </Card>
+        </div>
 
-      <SectionTitle>Recognition</SectionTitle>
-      <div className="bg-white border border-border rounded-lg">
-        <SettingRow name="Backend" hint="OCR recognition engine">
-          <SelectField value={settings.backend} onChange={(v) => update("backend", v)} options={BACKENDS} />
-        </SettingRow>
-        <SettingRow name="Language" hint="Primary document language">
-          <SelectField value={settings.lang} onChange={(v) => update("lang", v)} options={LANGS} />
-        </SettingRow>
-        <SettingRow name="Parse Method" hint="How to extract content">
-          <SelectField value={settings.parse_method} onChange={(v) => update("parse_method", v)} options={PARSE_METHODS} />
-        </SettingRow>
-      </div>
+        {/* Recognition */}
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Recognition
+          </h3>
+          <Card>
+            <CardContent className="px-5 py-1">
+              <SettingRow name="Backend" hint="OCR recognition engine">
+                <Select value={settings.backend} onValueChange={(v) => { if (v) update("backend", v); }}>
+                  <SelectTrigger className="min-w-[280px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BACKENDS.map((b) => (
+                      <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+              <Separator />
+              <SettingRow name="Language" hint="Primary document language">
+                <Select value={settings.lang} onValueChange={(v) => { if (v) update("lang", v); }}>
+                  <SelectTrigger className="min-w-[280px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGS.map((l) => (
+                      <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+              <Separator />
+              <SettingRow name="Parse Method" hint="How to extract content">
+                <Select value={settings.parse_method} onValueChange={(v) => { if (v) update("parse_method", v); }}>
+                  <SelectTrigger className="min-w-[280px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PARSE_METHODS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+            </CardContent>
+          </Card>
+        </div>
 
-      <SectionTitle>Preprocessing</SectionTitle>
-      <div className="bg-white border border-border rounded-lg">
-        <SettingRow name="Auto Rotate" hint="Detect and correct image orientation (0/90/180/270) via MineRU probing">
-          <div className="flex items-center gap-2.5">
-            <Toggle checked={settings.auto_rotate} onChange={(v) => update("auto_rotate", v)} label="Auto Rotate" />
-            <span className="text-xs text-muted-foreground w-12">{settings.auto_rotate ? "On" : "Off"}</span>
-          </div>
-        </SettingRow>
-      </div>
+        {/* Preprocessing */}
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Preprocessing
+          </h3>
+          <Card>
+            <CardContent className="px-5 py-1">
+              <SettingRow
+                name="Auto Rotate"
+                hint="Detect and correct image orientation via MineRU probing"
+                htmlFor="auto-rotate"
+              >
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="auto-rotate"
+                    checked={settings.auto_rotate}
+                    onCheckedChange={(v) => update("auto_rotate", v)}
+                  />
+                  <span className="text-xs text-muted-foreground w-8">
+                    {settings.auto_rotate ? "On" : "Off"}
+                  </span>
+                </div>
+              </SettingRow>
+            </CardContent>
+          </Card>
+        </div>
 
-      <SectionTitle>Features</SectionTitle>
-      <div className="bg-white border border-border rounded-lg">
-        <SettingRow name="Formula Recognition" hint="Detect and parse mathematical formulas">
-          <div className="flex items-center gap-2.5">
-            <Toggle checked={settings.formula_enable} onChange={(v) => update("formula_enable", v)} label="Formula" />
-            <span className="text-xs text-muted-foreground w-12">{settings.formula_enable ? "On" : "Off"}</span>
-          </div>
-        </SettingRow>
-        <SettingRow name="Table Recognition" hint="Detect and parse table structures">
-          <div className="flex items-center gap-2.5">
-            <Toggle checked={settings.table_enable} onChange={(v) => update("table_enable", v)} label="Table" />
-            <span className="text-xs text-muted-foreground w-12">{settings.table_enable ? "On" : "Off"}</span>
-          </div>
-        </SettingRow>
+        {/* Features */}
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Features
+          </h3>
+          <Card>
+            <CardContent className="px-5 py-1">
+              <SettingRow
+                name="Formula Recognition"
+                hint="Detect and parse mathematical formulas"
+                htmlFor="formula"
+              >
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="formula"
+                    checked={settings.formula_enable}
+                    onCheckedChange={(v) => update("formula_enable", v)}
+                  />
+                  <span className="text-xs text-muted-foreground w-8">
+                    {settings.formula_enable ? "On" : "Off"}
+                  </span>
+                </div>
+              </SettingRow>
+              <Separator />
+              <SettingRow
+                name="Table Recognition"
+                hint="Detect and parse table structures"
+                htmlFor="table"
+              >
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="table"
+                    checked={settings.table_enable}
+                    onCheckedChange={(v) => update("table_enable", v)}
+                  />
+                  <span className="text-xs text-muted-foreground w-8">
+                    {settings.table_enable ? "On" : "Off"}
+                  </span>
+                </div>
+              </SettingRow>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

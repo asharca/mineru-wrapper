@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
-import { Upload, Loader2 } from "lucide-react";
+import { Upload, Loader2, FileUp } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { uploadFile } from "../api.ts";
 import { loadSettings } from "../settings.ts";
 
@@ -47,40 +49,65 @@ export default function UploadPage() {
   });
 
   return (
-    <div className="max-w-2xl mx-auto mt-12">
-      <div
-        {...getRootProps()}
+    <div className="max-w-2xl mx-auto mt-16">
+      <div className="text-center mb-8">
+        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 mb-4">
+          <FileUp className="h-6 w-6 text-primary" />
+        </div>
+        <h2 className="text-2xl font-semibold tracking-tight">Upload Document</h2>
+        <p className="text-sm text-muted-foreground mt-1.5">
+          Drag & drop a PDF or image to extract text with OCR
+        </p>
+      </div>
+
+      <Card
         className={`
-          border-2 border-dashed rounded-xl p-16 text-center cursor-pointer
-          transition-all bg-white
-          ${isDragActive ? "border-primary bg-blue-50" : "border-border hover:border-primary hover:bg-blue-50/50"}
+          cursor-pointer transition-all duration-200
+          ${isDragActive ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-dashed hover:border-primary/50 hover:bg-muted/50"}
           ${uploading ? "opacity-60 cursor-not-allowed" : ""}
         `}
       >
-        <input {...getInputProps()} />
-        {uploading ? (
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            <p className="text-muted-foreground">Uploading & processing...</p>
+        <CardContent {...getRootProps()} className="py-16">
+          <input {...getInputProps()} />
+          <div className="flex flex-col items-center gap-4">
+            {uploading ? (
+              <>
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+                  <Loader2 className="h-7 w-7 text-primary animate-spin" />
+                </div>
+                <div className="text-center">
+                  <p className="font-medium">Uploading & processing...</p>
+                  <p className="text-sm text-muted-foreground mt-1">This may take a moment</p>
+                </div>
+              </>
+            ) : isDragActive ? (
+              <>
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+                  <Upload className="h-7 w-7 text-primary" />
+                </div>
+                <p className="text-lg font-medium">Drop file here</p>
+              </>
+            ) : (
+              <>
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <Upload className="h-7 w-7 text-muted-foreground" />
+                </div>
+                <div className="text-center">
+                  <p className="font-medium">Drag & drop your file here</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    or click to browse &middot; PDF, PNG, JPG, TIFF, BMP, GIF
+                  </p>
+                </div>
+              </>
+            )}
           </div>
-        ) : isDragActive ? (
-          <div className="flex flex-col items-center gap-3">
-            <Upload className="w-12 h-12 text-primary" />
-            <p className="text-lg font-medium">Drop file here</p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-3">
-            <Upload className="w-12 h-12 text-muted-foreground" />
-            <p className="text-lg font-medium">Drag & drop PDF or image here</p>
-            <p className="text-sm text-muted-foreground">or click to select</p>
-          </div>
-        )}
-      </div>
+        </CardContent>
+      </Card>
 
       {error && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-destructive text-sm">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mt-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
     </div>
   );

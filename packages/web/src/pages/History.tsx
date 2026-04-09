@@ -3,13 +3,24 @@ import { Link } from "react-router-dom";
 import { Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { getTasks, deleteTask, type TaskListResponse } from "../api.ts";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 import dayjs from "dayjs";
 
-const STATUS_MAP: Record<string, { label: string; className: string }> = {
-  pending: { label: "Pending", className: "text-muted-foreground" },
-  processing: { label: "Processing", className: "text-warning" },
-  completed: { label: "Completed", className: "text-success" },
-  failed: { label: "Failed", className: "text-destructive" },
+const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  pending: { label: "Pending", variant: "secondary" },
+  processing: { label: "Processing", variant: "outline" },
+  completed: { label: "Completed", variant: "default" },
+  failed: { label: "Failed", variant: "destructive" },
 };
 
 function formatSize(bytes: number): string {
@@ -50,104 +61,117 @@ export default function HistoryPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">History</h2>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">History</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            View and manage your OCR processing history
+          </p>
+        </div>
         <div className="flex gap-1">
           {FILTERS.map((f) => (
-            <button
+            <Button
               key={f.value}
+              variant={source === f.value ? "default" : "outline"}
+              size="sm"
               onClick={() => { setSource(f.value); setPage(1); }}
-              className={cn(
-                "px-3 py-1.5 text-sm rounded-md border transition-colors",
-                source === f.value
-                  ? "bg-primary text-white border-primary"
-                  : "bg-white text-muted-foreground border-border hover:bg-muted"
-              )}
             >
               {f.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading...</div>
+        <div className="text-center py-16 text-muted-foreground">Loading...</div>
       ) : !data || data.tasks.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">No records yet</div>
+        <Card className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <p className="text-sm">No records yet</p>
+        </Card>
       ) : (
         <>
-          <div className="bg-white border border-border rounded-lg overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-muted">
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase text-muted-foreground">File</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase text-muted-foreground">Source</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase text-muted-foreground">Backend</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase text-muted-foreground">Size</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase text-muted-foreground">Created</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase text-muted-foreground" />
-                </tr>
-              </thead>
-              <tbody>
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>File</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Backend</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {data.tasks.map((t) => {
                   const status = STATUS_MAP[t.status] || STATUS_MAP.pending;
                   return (
-                    <tr key={t.id} className="border-t border-border hover:bg-muted/50 transition-colors">
-                      <td className="px-4 py-2.5 max-w-[200px] truncate">
-                        <Link to={`/task/${t.id}`} className="text-primary hover:underline text-sm">
+                    <TableRow key={t.id}>
+                      <TableCell className="max-w-[200px] truncate font-medium">
+                        <Link to={`/task/${t.id}`} className="text-primary hover:underline">
                           {t.original_name}
                         </Link>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={cn(
-                          "inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold",
-                          t.source === "web" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
-                        )}>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={t.source === "web" ? "secondary" : "outline"} className="text-[11px]">
                           {t.source.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-sm">{t.backend}</td>
-                      <td className="px-4 py-2.5">
-                        <span className={cn("text-sm font-medium", status.className)}>{status.label}</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-sm text-muted-foreground">{formatSize(t.file_size)}</td>
-                      <td className="px-4 py-2.5 text-sm text-muted-foreground">{dayjs(t.created_at).format("MM-DD HH:mm")}</td>
-                      <td className="px-4 py-2.5">
-                        <button
-                          onClick={() => handleDelete(t.id)}
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-red-50 transition-colors"
-                          title="Delete"
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{t.backend}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={status.variant}
+                          className={cn(
+                            t.status === "processing" && "border-warning text-warning",
+                            t.status === "completed" && "border-success text-success bg-success/10"
+                          )}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
+                          {status.label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{formatSize(t.file_size)}</TableCell>
+                      <TableCell className="text-muted-foreground">{dayjs(t.created_at).format("MM-DD HH:mm")}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDelete(t.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </Card>
 
           {data.pagination.pages > 1 && (
-            <div className="flex items-center justify-center gap-3 mt-4">
-              <button
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
                 disabled={page <= 1}
                 onClick={() => setPage(page - 1)}
-                className="p-2 rounded-md border border-border bg-white disabled:opacity-40 hover:bg-muted transition-colors"
               >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-sm text-muted-foreground">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground tabular-nums min-w-[60px] text-center">
                 {page} / {data.pagination.pages}
               </span>
-              <button
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
                 disabled={page >= data.pagination.pages}
                 onClick={() => setPage(page + 1)}
-                className="p-2 rounded-md border border-border bg-white disabled:opacity-40 hover:bg-muted transition-colors"
               >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           )}
         </>
