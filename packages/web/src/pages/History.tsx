@@ -130,8 +130,8 @@ export default function HistoryPage() {
                           {status.label}
                           {t.status === "processing" && t.progress && (() => {
                             try {
-                              const p = JSON.parse(t.progress) as { percent?: number };
-                              if (p.percent !== undefined) return <span className="ml-1 opacity-70">{p.percent}%</span>;
+                              const p = JSON.parse(t.progress) as { message?: string };
+                              if (p.message) return <span className="ml-1 opacity-70">{p.message}</span>;
                             } catch { /* ignore */ }
                             return null;
                           })()}

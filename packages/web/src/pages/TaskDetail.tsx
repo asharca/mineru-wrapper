@@ -839,34 +839,20 @@ export default function TaskDetail() {
 
       {/* Processing / error states */}
       {isProcessing && (() => {
-        let percent: number | undefined;
         let stateLabel = "Processing";
         if (task.progress) {
           try {
-            const p = JSON.parse(task.progress) as { state?: string; percent?: number; message?: string };
-            percent = p.percent;
-            const labels: Record<string, string> = {
-              submitted: "Submitted",
-              pending: "Queued",
-              running: "Recognizing",
-              processing: "Recognizing",
-              fetching_result: "Fetching result",
-            };
-            stateLabel = p.message || labels[p.state || ""] || p.state || "Processing";
+            const p = JSON.parse(task.progress) as { state?: string; message?: string };
+            stateLabel = p.message || p.state || "Processing";
           } catch { /* ignore */ }
         }
         return (
           <div className="mx-4 mt-3 rounded-lg border border-warning/50 bg-warning/5 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Loader2 className="h-4 w-4 animate-spin text-warning" />
-                {stateLabel}...
-              </div>
-              {percent !== undefined && (
-                <span className="text-sm tabular-nums text-muted-foreground">{percent}%</span>
-              )}
+            <div className="flex items-center gap-2 mb-2 text-sm font-medium">
+              <Loader2 className="h-4 w-4 animate-spin text-warning" />
+              {stateLabel}...
             </div>
-            <Progress value={percent ?? null} className="h-2 [&_[data-slot=progress-indicator]]:bg-warning" />
+            <Progress value={null} className="h-2 [&_[data-slot=progress-indicator]]:bg-warning" />
           </div>
         );
       })()}

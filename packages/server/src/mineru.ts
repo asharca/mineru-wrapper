@@ -20,7 +20,7 @@ export interface ParseOptions {
   end_page_id?: number;
   auto_rotate?: boolean;
   mineru_url?: string;
-  onProgress?: (progress: { state: string; percent?: number; message?: string }) => void;
+  onProgress?: (progress: { state: string; message?: string }) => void;
 }
 
 export interface ParseResult {
@@ -285,28 +285,13 @@ function buildForm(filePath: string, originalName: string, options: ParseOptions
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 600_000;
 
-type ProgressCallback = (progress: { state: string; percent?: number; message?: string }) => void;
-
-/**
- * Parse MineRU's progress field into a percent (0-100).
- * Handles: number (0-1 or 0-100), "50%", "3/10", etc.
- */
-function parsePercent(raw: unknown): number | undefined {
-  if (typeof raw === "number") return raw <= 1 ? Math.round(raw * 100) : Math.round(raw);
-  if (typeof raw !== "string") return undefined;
-  const pct = raw.match(/^(\d+(?:\.\d+)?)\s*%$/);
-  if (pct) return Math.round(Number(pct[1]));
-  const frac = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (frac && Number(frac[2]) > 0) return Math.round((Number(frac[1]) / Number(frac[2])) * 100);
-  return undefined;
-}
+type ProgressCallback = (progress: { state: string; message?: string }) => void;
 
 async function submitAndPoll(
   mineruUrl: string,
   form: FormData,
   onProgress?: ProgressCallback,
 ): Promise<Record<string, unknown>> {
-  // Submit async task
   const submitRes = await fetch(`${mineruUrl}/tasks`, {
     method: "POST",
     body: form,
@@ -322,9 +307,12 @@ async function submitAndPoll(
   const taskId = submitJson.task_id as string;
   if (!taskId) throw new Error("MineRU did not return a task_id");
 
-  onProgress?.({ state: "submitted", percent: 0 });
+  const queuedAhead = typeof submitJson.queued_ahead === "number" ? submitJson.queued_ahead : 0;
+  onProgress?.({
+    state: "pending",
+    message: queuedAhead > 0 ? `Queued (${queuedAhead} ahead)` : "Queued",
+  });
 
-  // Poll for status
   const deadline = Date.now() + POLL_TIMEOUT;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));
@@ -335,14 +323,17 @@ async function submitAndPoll(
     if (!statusRes.ok) continue;
 
     const statusJson = (await statusRes.json()) as Record<string, unknown>;
-    const state = String(statusJson.state || statusJson.status || "unknown");
-    const percent = parsePercent(statusJson.progress);
-    const message = statusJson.message ? String(statusJson.message) : undefined;
+    const state = String(statusJson.status || "unknown");
 
-    onProgress?.({ state, percent, message });
+    if (state === "pending") {
+      const qa = typeof statusJson.queued_ahead === "number" ? statusJson.queued_ahead : 0;
+      onProgress?.({ state, message: qa > 0 ? `Queued (${qa} ahead)` : "Queued" });
+    } else if (state === "running" || state === "processing") {
+      onProgress?.({ state, message: "Recognizing" });
+    }
 
     if (state === "done" || state === "completed" || state === "success") {
-      onProgress?.({ state: "fetching_result", percent: 100 });
+      onProgress?.({ state: "completed", message: "Fetching result" });
       const resultRes = await fetch(`${mineruUrl}/tasks/${taskId}/result`, {
         signal: AbortSignal.timeout(60_000),
       });
