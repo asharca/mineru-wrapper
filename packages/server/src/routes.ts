@@ -221,22 +221,29 @@ app.openapi(uploadRoute, async (c): Promise<any> => {
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
   const { buf, hash, ext } = await readUploadFile(file);
-
-  // Check for existing completed task with same file
-  const existing = stmt.findByHash.get(hash) as OcrTask | undefined;
-  if (existing) {
-    return c.json({ id: existing.id, status: "completed" as const, message: "Duplicate file, returning cached result" });
-  }
-
-  const saved = await saveBuffer(buf, ext);
   const id = uuid();
   const backend = String(body["backend"] || "pipeline");
   const lang = String(body["lang"] || "ch");
 
+  // Check for existing completed task with same file — copy result to new record
+  const existing = stmt.findByHash.get(hash) as OcrTask | undefined;
+  if (existing) {
+    const saved = await saveBuffer(buf, ext);
+    stmt.insertCached.run({
+      $id: id, $filename: saved.filename, $original_name: file.name,
+      $source: "web", $backend: backend, $lang: lang,
+      $file_size: buf.byteLength, $file_hash: hash,
+      $result_md: existing.result_md, $content_list: existing.content_list, $pages: existing.pages,
+    });
+    return c.json({ id, status: "completed" as const, message: "Duplicate file, returning cached result" });
+  }
+
+  const saved = await saveBuffer(buf, ext);
+
   stmt.insert.run({
     $id: id, $filename: saved.filename, $original_name: file.name,
     $status: "pending", $source: "web", $backend: backend,
-    $lang: lang, $file_size: file.size, $file_hash: hash,
+    $lang: lang, $file_size: buf.byteLength, $file_hash: hash,
   });
 
   const options: ParseOptions = {
@@ -291,22 +298,29 @@ app.openapi(parseAsyncRoute, async (c): Promise<any> => {
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
   const { buf, hash, ext } = await readUploadFile(file);
-
-  const existing = stmt.findByHash.get(hash) as OcrTask | undefined;
-  if (existing) {
-    return c.json({ id: existing.id, status: "completed" as const, message: "Duplicate file, returning cached result" });
-  }
-
-  const saved = await saveBuffer(buf, ext);
   const id = uuid();
   const backend = String(body["backend"] || "pipeline");
   const langRaw = body["lang_list"];
   const langList = Array.isArray(langRaw) ? langRaw.map(String) : langRaw ? [String(langRaw)] : ["ch"];
 
+  const existing = stmt.findByHash.get(hash) as OcrTask | undefined;
+  if (existing) {
+    const saved = await saveBuffer(buf, ext);
+    stmt.insertCached.run({
+      $id: id, $filename: saved.filename, $original_name: file.name,
+      $source: "api", $backend: backend, $lang: langList[0] || "ch",
+      $file_size: buf.byteLength, $file_hash: hash,
+      $result_md: existing.result_md, $content_list: existing.content_list, $pages: existing.pages,
+    });
+    return c.json({ id, status: "completed" as const, message: "Duplicate file, returning cached result" });
+  }
+
+  const saved = await saveBuffer(buf, ext);
+
   stmt.insert.run({
     $id: id, $filename: saved.filename, $original_name: file.name,
     $status: "pending", $source: "api", $backend: backend,
-    $lang: langList[0] || "ch", $file_size: file.size, $file_hash: hash,
+    $lang: langList[0] || "ch", $file_size: buf.byteLength, $file_hash: hash,
   });
 
   const options: ParseOptions = {
@@ -364,11 +378,22 @@ app.openapi(parseSyncRoute, async (c): Promise<any> => {
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
   const { buf, hash, ext } = await readUploadFile(file);
+  const id = uuid();
+  const backend = String(body["backend"] || "pipeline");
+  const langRaw = body["lang_list"];
+  const langList = Array.isArray(langRaw) ? langRaw.map(String) : langRaw ? [String(langRaw)] : ["ch"];
 
   const existing = stmt.findByHash.get(hash) as OcrTask | undefined;
   if (existing) {
+    const saved = await saveBuffer(buf, ext);
+    stmt.insertCached.run({
+      $id: id, $filename: saved.filename, $original_name: file.name,
+      $source: "api", $backend: backend, $lang: langList[0] || "ch",
+      $file_size: buf.byteLength, $file_hash: hash,
+      $result_md: existing.result_md, $content_list: existing.content_list, $pages: existing.pages,
+    });
     return c.json({
-      id: existing.id,
+      id,
       status: "completed" as const,
       markdown: existing.result_md || "",
       content_list: existing.content_list ? JSON.parse(existing.content_list) : [],
@@ -377,15 +402,11 @@ app.openapi(parseSyncRoute, async (c): Promise<any> => {
   }
 
   const saved = await saveBuffer(buf, ext);
-  const id = uuid();
-  const backend = String(body["backend"] || "pipeline");
-  const langRaw = body["lang_list"];
-  const langList = Array.isArray(langRaw) ? langRaw.map(String) : langRaw ? [String(langRaw)] : ["ch"];
 
   stmt.insert.run({
     $id: id, $filename: saved.filename, $original_name: file.name,
     $status: "pending", $source: "api", $backend: backend,
-    $lang: langList[0] || "ch", $file_size: file.size, $file_hash: hash,
+    $lang: langList[0] || "ch", $file_size: buf.byteLength, $file_hash: hash,
   });
 
   const options: ParseOptions = {

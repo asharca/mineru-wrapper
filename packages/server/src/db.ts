@@ -70,6 +70,10 @@ export const stmt = {
     `INSERT INTO tasks (id, filename, original_name, status, source, backend, lang, file_size, file_hash)
      VALUES ($id, $filename, $original_name, $status, $source, $backend, $lang, $file_size, $file_hash)`
   ),
+  insertCached: db.prepare(
+    `INSERT INTO tasks (id, filename, original_name, status, source, backend, lang, file_size, file_hash, result_md, content_list, pages, completed_at)
+     VALUES ($id, $filename, $original_name, 'completed', $source, $backend, $lang, $file_size, $file_hash, $result_md, $content_list, $pages, datetime('now'))`
+  ),
   findByHash: db.prepare(
     `SELECT * FROM tasks WHERE file_hash = ?1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`
   ),
