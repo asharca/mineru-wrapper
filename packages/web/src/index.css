@@ -23,6 +23,7 @@ body {
 .block-type-table { background-color: #f0fdf4; color: #16a34a; }
 .block-type-figure, .block-type-image { background-color: #faf5ff; color: #9333ea; }
 .block-type-formula, .block-type-interline_equation { background-color: #fffbeb; color: #d97706; }
+.block-type-list { background-color: #f0f9ff; color: #0284c7; }
 
 /* Markdown rendered content */
 .rendered-md { font-size: 15px; line-height: 1.8; }

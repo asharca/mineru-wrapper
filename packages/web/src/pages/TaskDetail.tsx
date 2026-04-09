@@ -42,6 +42,7 @@ const TYPE_COLORS: Record<string, string> = {
   text: "#3b82f6", title: "#ef4444", table: "#22c55e",
   figure: "#a855f7", image: "#a855f7",
   formula: "#f59e0b", interline_equation: "#f59e0b",
+  list: "#0ea5e9",
 };
 
 function typeColor(type: string): string {
@@ -400,9 +401,9 @@ export default function TaskDetail() {
                             <span className="text-[10px] text-muted-foreground font-mono opacity-60">
                               [{block.bbox.join(", ")}]
                             </span>
-                            {block.text && (
+                            {(block.text || block.list_items) && (
                               <span className="ml-auto">
-                                <CopyButton text={block.text} />
+                                <CopyButton text={block.text || (block.list_items ?? []).join("\n")} />
                               </span>
                             )}
                           </div>
@@ -414,6 +415,12 @@ export default function TaskDetail() {
                               ) : <em className="text-muted-foreground">(image region)</em>
                             ) : block.type === "table" && block.table_body ? (
                               <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: block.table_body }} />
+                            ) : block.type === "list" && block.list_items ? (
+                              <ul className="list-disc pl-5 space-y-1">
+                                {block.list_items.map((item, li) => (
+                                  <li key={li}>{item}</li>
+                                ))}
+                              </ul>
                             ) : (
                               <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{block.text || ""}</Markdown>
                             )}

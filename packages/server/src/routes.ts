@@ -90,6 +90,7 @@ const ContentBlockSchema = z.object({
   img_path: z.string().optional(),
   img_url: z.string().optional().openapi({ description: "URL to the extracted image file" }),
   table_body: z.string().optional().openapi({ description: "HTML table content for table-type blocks" }),
+  list_items: z.array(z.string()).optional().openapi({ description: "List items for list-type blocks" }),
 }).openapi("ContentBlock");
 
 const PageSizeSchema = z.object({

@@ -7,6 +7,7 @@ export interface ContentBlock {
   img_path?: string;
   img_url?: string;
   table_body?: string;
+  list_items?: string[];
 }
 
 export interface PageSize {
