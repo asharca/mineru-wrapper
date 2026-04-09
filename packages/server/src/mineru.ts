@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { PDFDocument, degrees } from "pdf-lib";
 import * as mupdf from "mupdf";
 import { extname, dirname, join } from "path";
-import { mkdirSync } from "fs";
+import { mkdirSync, unlinkSync } from "fs";
 import { v4 as uuid } from "uuid";
 import type { ContentBlock } from "./db.ts";
 
@@ -232,6 +232,25 @@ export async function rotateFile(filePath: string, angle: number, pageIndices?: 
     await Bun.write(filePath, rotatedBytes);
     return;
   }
+}
+
+/**
+ * Extract specific pages from a PDF into a temporary file.
+ * Returns the temp file path. Caller is responsible for cleanup.
+ */
+export async function extractPdfPages(filePath: string, pageIndices: number[]): Promise<string> {
+  const pdfBytes = await Bun.file(filePath).arrayBuffer();
+  const srcPdf = await PDFDocument.load(pdfBytes);
+  const newPdf = await PDFDocument.create();
+
+  const copiedPages = await newPdf.copyPages(srcPdf, pageIndices);
+  for (const page of copiedPages) {
+    newPdf.addPage(page);
+  }
+
+  const tmpPath = join(dirname(filePath), `_extract_${uuid()}.pdf`);
+  await Bun.write(tmpPath, await newPdf.save());
+  return tmpPath;
 }
 
 export async function parseFile(

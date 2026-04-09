@@ -158,6 +158,7 @@ interface PdfViewerProps {
   currentPage: number;
   onPageChange: (page: number) => void;
   pageRotation: number;
+  totalRotatedPages: number;
   onRotate: () => void;
   onConfirmRotate: () => void;
   rotating: boolean;
@@ -166,7 +167,7 @@ interface PdfViewerProps {
 function PdfViewer({
   src, blocks, activeIndex, onHover, onClick,
   pageWidths, pageHeights, currentPage, onPageChange,
-  pageRotation, onRotate, onConfirmRotate, rotating,
+  pageRotation, totalRotatedPages, onRotate, onConfirmRotate, rotating,
 }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageSize, setPageSize] = useState<{ w: number; h: number } | null>(null);
@@ -235,28 +236,28 @@ function PdfViewer({
 
           {/* Rotation indicator + confirm */}
           {pageRotation > 0 && (
-            <>
-              <Badge variant="outline" className="text-[11px] h-6 gap-1">
-                {pageRotation}°
-              </Badge>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Button
-                    variant="default" size="sm"
-                    className="h-7 px-2.5 gap-1 text-xs"
-                    onClick={onConfirmRotate}
-                    disabled={rotating}
-                  >
-                    {rotating
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <CheckCircle className="h-3.5 w-3.5" />
-                    }
-                    Re-OCR this page
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Rotate and re-recognize this page only</TooltipContent>
-              </Tooltip>
-            </>
+            <Badge variant="outline" className="text-[11px] h-6 gap-1">
+              {pageRotation}°
+            </Badge>
+          )}
+          {totalRotatedPages > 0 && (
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="default" size="sm"
+                  className="h-7 px-2.5 gap-1 text-xs"
+                  onClick={onConfirmRotate}
+                  disabled={rotating}
+                >
+                  {rotating
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <CheckCircle className="h-3.5 w-3.5" />
+                  }
+                  Re-OCR {totalRotatedPages === 1 ? "1 page" : `${totalRotatedPages} pages`}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Rotate and re-recognize only the rotated pages</TooltipContent>
+            </Tooltip>
           )}
 
           <Separator orientation="vertical" className="h-4 mx-1" />
@@ -674,25 +675,19 @@ export default function TaskDetail() {
 
   const confirmRotatePdfPage = async () => {
     if (!task) return;
-    const pageIdx = pdfPage - 1;
-    const angle = pageRotations[pageIdx] || 0;
-    if (angle === 0) return;
+    // Collect all pages that have been rotated
+    const rotations: Record<string, number> = {};
+    for (const [pageIdx, angle] of Object.entries(pageRotations)) {
+      if (angle !== 0) rotations[pageIdx] = angle;
+    }
+    if (Object.keys(rotations).length === 0) return;
 
     setRotating(true);
     setEditing(false);
     try {
-      await reprocessTask(task.id, {
-        rotate: angle,
-        rotate_pages: [pageIdx],
-        page_index: pageIdx,
-      });
+      await reprocessTask(task.id, { rotations });
       setTask({ ...task, status: "processing" } as OcrTask);
-      // Clear this page's rotation preview
-      setPageRotations((prev) => {
-        const next = { ...prev };
-        delete next[pageIdx];
-        return next;
-      });
+      setPageRotations({});
       setTimeout(() => pollUntilDone(task.id), 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rotation failed");
@@ -918,6 +913,7 @@ export default function TaskDetail() {
                         pageWidths={pageWidths} pageHeights={pageHeights}
                         currentPage={pdfPage} onPageChange={setPdfPage}
                         pageRotation={currentPageRotation}
+                        totalRotatedPages={Object.values(pageRotations).filter((a) => a !== 0).length}
                         onRotate={handleRotatePdfPage}
                         onConfirmRotate={confirmRotatePdfPage}
                         rotating={rotating}

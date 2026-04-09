@@ -109,7 +109,8 @@ export async function updateTaskContent(
 export interface ReprocessOptions {
   rotate?: number;
   rotate_pages?: number[];
-  page_index?: number;
+  rotations?: Record<string, number>;
+  page_indices?: number[];
   backend?: string;
   lang?: string;
   parse_method?: string;

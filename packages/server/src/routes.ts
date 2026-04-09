@@ -5,7 +5,7 @@ import { v4 as uuid } from "uuid";
 import { mkdirSync, unlinkSync, existsSync } from "fs";
 import { join, extname } from "path";
 import { stmt, type OcrTask, type ContentBlock } from "./db.ts";
-import { parseFile, rotateFile, type ParseOptions } from "./mineru.ts";
+import { parseFile, rotateFile, extractPdfPages, type ParseOptions } from "./mineru.ts";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -595,9 +595,10 @@ const reprocessRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            rotate: z.number().optional().openapi({ description: "Rotation angle in degrees (90, 180, 270). Applied before OCR.", example: 90 }),
+            rotate: z.number().optional().openapi({ description: "Rotation angle in degrees (90, 180, 270). Applied to all pages or rotate_pages before OCR.", example: 90 }),
             rotate_pages: z.array(z.number()).optional().openapi({ description: "For PDFs: page indices (0-based) to rotate. If omitted, rotates all pages." }),
-            page_index: z.number().optional().openapi({ description: "For PDFs: only re-OCR this single page (0-based). Results are merged into existing content." }),
+            rotations: z.record(z.string(), z.number()).optional().openapi({ description: "Per-page rotation map: { '0': 90, '3': 270 }. Each page rotated by its angle. Pages listed here are also re-OCR'd." }),
+            page_indices: z.array(z.number()).optional().openapi({ description: "For PDFs: re-OCR only these pages (0-based). Extracts a sub-PDF, sends to MineRU, and merges results back." }),
             backend: z.string().optional(),
             lang: z.string().optional(),
             parse_method: z.string().optional(),
@@ -625,8 +626,22 @@ app.openapi(reprocessRoute, async (c): Promise<any> => {
 
   const body = c.req.valid("json");
 
-  // Rotate the file first if requested
-  if (body.rotate && body.rotate !== 0) {
+  // Per-page rotations: rotate each page by its own angle, then re-OCR those pages
+  if (body.rotations && Object.keys(body.rotations).length > 0) {
+    for (const [pageStr, angle] of Object.entries(body.rotations)) {
+      const pageIdx = Number(pageStr);
+      if (angle && [90, 180, 270].includes(angle)) {
+        await rotateFile(filePath, angle, [pageIdx]);
+      }
+    }
+    // Auto-set page_indices from rotations if not explicitly provided
+    if (!body.page_indices?.length) {
+      body.page_indices = Object.keys(body.rotations).map(Number).sort((a, b) => a - b);
+    }
+  }
+
+  // Single-angle rotation for all/specific pages (legacy)
+  if (body.rotate && body.rotate !== 0 && !body.rotations) {
     await rotateFile(filePath, body.rotate, body.rotate_pages);
   }
 
@@ -640,22 +655,28 @@ app.openapi(reprocessRoute, async (c): Promise<any> => {
     mineru_url: body.mineru_url || undefined,
   };
 
-  // Single-page re-OCR: process only that page, merge results
-  if (body.page_index !== undefined) {
-    options.start_page_id = body.page_index;
-    options.end_page_id = body.page_index;
+  // Partial re-OCR: extract selected pages into a temp PDF, send only that to MineRU, merge results back
+  if (body.page_indices?.length) {
+    const pageIndices = body.page_indices.sort((a, b) => a - b);
 
     stmt.setStatus.run({ $id: task.id, $status: "processing" });
 
-    // Run in background: parse single page, then merge
     (async () => {
+      let tmpPath: string | undefined;
       try {
-        const result = await parseFile(filePath, task.original_name, options);
+        // Extract only the requested pages into a temporary PDF
+        tmpPath = await extractPdfPages(filePath, pageIndices);
+        const result = await parseFile(tmpPath, task.original_name, options);
 
-        // Merge: replace blocks for this page, keep blocks for other pages
+        // Map result blocks back to original page indices
+        // MineRU returns page_idx 0..N-1 for the extracted sub-PDF
+        const pageIndexSet = new Set(pageIndices);
         const existingBlocks: ContentBlock[] = task.content_list ? JSON.parse(task.content_list) : [];
-        const otherBlocks = existingBlocks.filter((b) => (b.page_idx ?? 0) !== body.page_index);
-        const newBlocks = result.contentList.map((b) => ({ ...b, page_idx: body.page_index }));
+        const otherBlocks = existingBlocks.filter((b) => !pageIndexSet.has(b.page_idx ?? 0));
+        const newBlocks = result.contentList.map((b) => ({
+          ...b,
+          page_idx: pageIndices[b.page_idx ?? 0],
+        }));
         const merged = [...otherBlocks, ...newBlocks].sort((a, b) => {
           const pa = a.page_idx ?? 0;
           const pb = b.page_idx ?? 0;
@@ -663,10 +684,13 @@ app.openapi(reprocessRoute, async (c): Promise<any> => {
           return (a.bbox?.[1] ?? 0) - (b.bbox?.[1] ?? 0);
         });
 
-        // Merge markdown: replace the page's section in result_md
+        // Update page sizes for the re-OCR'd pages
         const existingPages: { width: number; height: number }[] = task.pages ? JSON.parse(task.pages) : [];
-        if (result.pages.length > 0 && body.page_index! < existingPages.length) {
-          existingPages[body.page_index!] = result.pages[0]!;
+        for (let i = 0; i < pageIndices.length; i++) {
+          const origIdx = pageIndices[i]!;
+          if (result.pages[i] && origIdx < existingPages.length) {
+            existingPages[origIdx] = result.pages[i]!;
+          }
         }
 
         // Rebuild markdown from merged blocks
@@ -690,10 +714,13 @@ app.openapi(reprocessRoute, async (c): Promise<any> => {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         stmt.setError.run({ $id: task.id, $error: message });
+      } finally {
+        if (tmpPath) try { unlinkSync(tmpPath); } catch { /* ignore */ }
       }
     })();
 
-    return c.json({ id: task.id, status: "processing", message: `Re-OCR page ${body.page_index! + 1} started` });
+    const label = pageIndices.map((i) => i + 1).join(", ");
+    return c.json({ id: task.id, status: "processing", message: `Re-OCR page(s) ${label} started` });
   }
 
   // Full reprocess
