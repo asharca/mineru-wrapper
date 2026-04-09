@@ -128,6 +128,9 @@ export default function HistoryPage() {
                           )}
                         >
                           {status.label}
+                          {t.status === "processing" && t.progress && (
+                            <span className="ml-1 opacity-70">{t.progress}</span>
+                          )}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{formatSize(t.file_size)}</TableCell>

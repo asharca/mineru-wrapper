@@ -16,7 +16,7 @@ db.exec(`
     original_name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     source TEXT NOT NULL DEFAULT 'web',
-    backend TEXT NOT NULL DEFAULT 'pipeline',
+    backend TEXT NOT NULL DEFAULT 'hybrid-auto-engine',
     lang TEXT NOT NULL DEFAULT 'ch',
     result_md TEXT,
     content_list TEXT,
@@ -31,7 +31,7 @@ db.exec(`
 `);
 
 // Migrations
-for (const col of ["content_list TEXT", "pages TEXT", "file_hash TEXT"]) {
+for (const col of ["content_list TEXT", "pages TEXT", "file_hash TEXT", "progress TEXT"]) {
   try { db.exec(`ALTER TABLE tasks ADD COLUMN ${col}`); } catch { /* exists */ }
 }
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_file_hash ON tasks(file_hash)`);
@@ -60,6 +60,7 @@ export interface OcrTask {
   result_md: string | null;
   content_list: string | null;
   pages: string | null;
+  progress: string | null;
   error: string | null;
   created_at: string;
   completed_at: string | null;
@@ -88,15 +89,16 @@ export const stmt = {
   setError: db.prepare(
     `UPDATE tasks SET status='failed', error=$error, completed_at=datetime('now') WHERE id=$id`
   ),
+  setProgress: db.prepare(`UPDATE tasks SET progress=$progress WHERE id=$id`),
   setStatus: db.prepare(`UPDATE tasks SET status=$status WHERE id=$id`),
   getById: db.prepare(`SELECT * FROM tasks WHERE id=?1`),
   list: db.prepare(
-    `SELECT id, filename, original_name, status, source, backend, lang, error,
+    `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
             created_at, completed_at, file_size
      FROM tasks ORDER BY created_at DESC LIMIT ?1 OFFSET ?2`
   ),
   listBySource: db.prepare(
-    `SELECT id, filename, original_name, status, source, backend, lang, error,
+    `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
             created_at, completed_at, file_size
      FROM tasks WHERE source=?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3`
   ),

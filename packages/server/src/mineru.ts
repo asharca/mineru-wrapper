@@ -20,6 +20,7 @@ export interface ParseOptions {
   end_page_id?: number;
   auto_rotate?: boolean;
   mineru_url?: string;
+  onProgress?: (progress: string) => void;
 }
 
 export interface ParseResult {
@@ -253,26 +254,15 @@ export async function extractPdfPages(filePath: string, pageIndices: number[]): 
   return tmpPath;
 }
 
-export async function parseFile(
-  filePath: string,
-  originalName: string,
-  options: ParseOptions = {}
-): Promise<ParseResult> {
-  const mineruUrl = options.mineru_url || DEFAULT_MINERU_URL;
-
-  // Pre-process: auto-rotate if enabled
-  if (options.auto_rotate) {
-    await autoRotateFile(filePath, mineruUrl);
-  }
+function buildForm(filePath: string, originalName: string, options: ParseOptions): FormData {
   const form = new FormData();
-
   const fileBlob = Bun.file(filePath);
   form.append("files", fileBlob, originalName);
   form.append("return_md", "true");
   form.append("return_content_list", "true");
   form.append("return_middle_json", "true");
   form.append("return_images", "true");
-  form.append("backend", options.backend || "pipeline");
+  form.append("backend", options.backend || "hybrid-auto-engine");
 
   const langs = options.lang_list?.length ? options.lang_list : ["ch"];
   for (const lang of langs) {
@@ -289,19 +279,80 @@ export async function parseFile(
   if (options.end_page_id !== undefined)
     form.append("end_page_id", String(options.end_page_id));
 
-  const res = await fetch(`${mineruUrl}/file_parse`, {
+  return form;
+}
+
+const POLL_INTERVAL = 2000;
+const POLL_TIMEOUT = 600_000;
+
+async function submitAndPoll(
+  mineruUrl: string,
+  form: FormData,
+  onProgress?: (progress: string) => void,
+): Promise<Record<string, unknown>> {
+  // Submit async task
+  const submitRes = await fetch(`${mineruUrl}/tasks`, {
     method: "POST",
     body: form,
-    signal: AbortSignal.timeout(600_000),
+    signal: AbortSignal.timeout(60_000),
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`MineRU returned ${res.status}: ${text}`);
+  if (!submitRes.ok) {
+    const text = await submitRes.text();
+    throw new Error(`MineRU submit failed ${submitRes.status}: ${text}`);
   }
 
-  const json = (await res.json()) as Record<string, unknown>;
+  const submitJson = (await submitRes.json()) as Record<string, unknown>;
+  const taskId = submitJson.task_id as string;
+  if (!taskId) throw new Error("MineRU did not return a task_id");
 
+  onProgress?.("submitted");
+
+  // Poll for status
+  const deadline = Date.now() + POLL_TIMEOUT;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+
+    const statusRes = await fetch(`${mineruUrl}/tasks/${taskId}`, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!statusRes.ok) continue;
+
+    const statusJson = (await statusRes.json()) as Record<string, unknown>;
+    const state = statusJson.state || statusJson.status;
+    const progress = statusJson.progress;
+
+    if (progress !== undefined) {
+      onProgress?.(String(progress));
+    } else if (typeof state === "string") {
+      onProgress?.(state);
+    }
+
+    if (state === "done" || state === "completed" || state === "success") {
+      // Fetch result
+      const resultRes = await fetch(`${mineruUrl}/tasks/${taskId}/result`, {
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!resultRes.ok) {
+        const text = await resultRes.text();
+        throw new Error(`MineRU result fetch failed ${resultRes.status}: ${text}`);
+      }
+      return (await resultRes.json()) as Record<string, unknown>;
+    }
+
+    if (state === "failed" || state === "error") {
+      const errMsg = statusJson.error || statusJson.message || "MineRU task failed";
+      throw new Error(String(errMsg));
+    }
+  }
+
+  throw new Error("MineRU task timed out");
+}
+
+async function extractResults(
+  json: Record<string, unknown>,
+  filePath: string,
+): Promise<ParseResult> {
   let markdown = "";
   let contentList: ContentBlock[] = [];
   let pages: { width: number; height: number }[] = [];
@@ -318,7 +369,6 @@ export async function parseFile(
       .join("\n\n---\n\n");
 
     for (const entry of entries) {
-      // Parse content_list (may be string or array)
       const cl = typeof entry.content_list === "string"
         ? JSON.parse(entry.content_list)
         : entry.content_list;
@@ -326,7 +376,6 @@ export async function parseFile(
         contentList = contentList.concat(cl as ContentBlock[]);
       }
 
-      // Extract page_size from middle_json
       const mj = typeof entry.middle_json === "string"
         ? JSON.parse(entry.middle_json)
         : entry.middle_json;
@@ -338,17 +387,14 @@ export async function parseFile(
         }
       }
 
-      // Extract images: save to disk and set URL references
       const images = entry.images as Record<string, string> | undefined;
       if (images && typeof images === "object") {
         const uploadDir = dirname(filePath);
         const imgDir = join(uploadDir, "img");
         mkdirSync(imgDir, { recursive: true });
 
-        // Save each base64 image to disk and build URL map
         const urlMap: Record<string, string> = {};
         for (const [key, dataUri] of Object.entries(images)) {
-          // dataUri is like "data:image/jpeg;base64,..."
           const match = dataUri.match(/^data:image\/(\w+);base64,(.+)$/);
           if (!match) continue;
           const imgExt = match[1] === "jpeg" ? "jpg" : match[1];
@@ -358,7 +404,6 @@ export async function parseFile(
           urlMap[key] = `/files/img/${imgFilename}`;
         }
 
-        // Set img_url on content_list image blocks
         for (const block of contentList) {
           if (block.img_path) {
             const key = block.img_path.replace(/^images\//, "");
@@ -368,7 +413,6 @@ export async function parseFile(
           }
         }
 
-        // Replace markdown image paths with URLs
         for (const [key, url] of Object.entries(urlMap)) {
           markdown = markdown.replaceAll(`images/${key}`, url);
         }
@@ -381,4 +425,20 @@ export async function parseFile(
   }
 
   return { markdown, contentList, pages, raw: json };
+}
+
+export async function parseFile(
+  filePath: string,
+  originalName: string,
+  options: ParseOptions = {}
+): Promise<ParseResult> {
+  const mineruUrl = options.mineru_url || DEFAULT_MINERU_URL;
+
+  if (options.auto_rotate) {
+    await autoRotateFile(filePath, mineruUrl);
+  }
+
+  const form = buildForm(filePath, originalName, options);
+  const json = await submitAndPoll(mineruUrl, form, options.onProgress);
+  return extractResults(json, filePath);
 }

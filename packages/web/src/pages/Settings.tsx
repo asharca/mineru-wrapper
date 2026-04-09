@@ -23,7 +23,7 @@ import {
 } from "../settings.ts";
 
 const DEFAULTS: OcrSettings = {
-  backend: "pipeline",
+  backend: "hybrid-auto-engine",
   lang: "ch",
   parse_method: "auto",
   formula_enable: true,

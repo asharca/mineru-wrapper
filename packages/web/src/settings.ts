@@ -1,9 +1,11 @@
 const STORAGE_KEY = "ocr-settings";
 
 export const BACKENDS = [
+  { value: "hybrid-auto-engine", label: "Hybrid Auto (新一代多语言高精度)" },
+  { value: "hybrid-http-client", label: "Hybrid HTTP (远程高精度)" },
   { value: "pipeline", label: "Pipeline (通用多语言)" },
   { value: "vlm-auto-engine", label: "VLM Auto (中英高精度)" },
-  { value: "hybrid-auto-engine", label: "Hybrid Auto (新一代高精度)" },
+  { value: "vlm-http-client", label: "VLM HTTP (远程中英高精度)" },
 ] as const;
 
 export const LANGS = [
@@ -34,7 +36,7 @@ export interface OcrSettings {
 }
 
 const DEFAULTS: OcrSettings = {
-  backend: "pipeline",
+  backend: "hybrid-auto-engine",
   lang: "ch",
   parse_method: "auto",
   formula_enable: true,

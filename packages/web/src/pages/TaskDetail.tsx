@@ -840,7 +840,10 @@ export default function TaskDetail() {
       {isProcessing && (
         <Alert className="mx-4 mt-3 border-warning/50 bg-warning/5">
           <Loader2 className="h-4 w-4 animate-spin text-warning" />
-          <AlertDescription>Processing your document...</AlertDescription>
+          <AlertDescription>
+            Processing your document...
+            {task.progress && <span className="ml-2 text-muted-foreground">({task.progress})</span>}
+          </AlertDescription>
         </Alert>
       )}
 

@@ -60,6 +60,9 @@ async function processTask(
 ) {
   stmt.setStatus.run({ $id: task.id, $status: "processing" });
   try {
+    options.onProgress = (progress: string) => {
+      stmt.setProgress.run({ $id: task.id, $progress: progress });
+    };
     const result = await parseFile(filePath, task.original_name, options);
     stmt.setResult.run({
       $id: task.id,
@@ -67,9 +70,11 @@ async function processTask(
       $content_list: JSON.stringify(result.contentList),
       $pages: JSON.stringify(result.pages),
     });
+    stmt.setProgress.run({ $id: task.id, $progress: null });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     stmt.setError.run({ $id: task.id, $error: message });
+    stmt.setProgress.run({ $id: task.id, $progress: null });
   }
 }
 
@@ -109,6 +114,7 @@ const TaskSchema = z.object({
   result_md: z.string().nullable(),
   content_list: z.array(ContentBlockSchema).nullable(),
   pages: z.array(PageSizeSchema).nullable(),
+  progress: z.string().nullable().optional(),
   error: z.string().nullable(),
   created_at: z.string(),
   completed_at: z.string().nullable(),
@@ -123,6 +129,7 @@ const TaskSummarySchema = z.object({
   source: z.enum(["web", "api"]),
   backend: z.string(),
   lang: z.string(),
+  progress: z.string().nullable().optional(),
   error: z.string().nullable(),
   created_at: z.string(),
   completed_at: z.string().nullable(),
@@ -666,6 +673,9 @@ app.openapi(reprocessRoute, async (c): Promise<any> => {
       try {
         // Extract only the requested pages into a temporary PDF
         tmpPath = await extractPdfPages(filePath, pageIndices);
+        options.onProgress = (progress: string) => {
+          stmt.setProgress.run({ $id: task.id, $progress: progress });
+        };
         const result = await parseFile(tmpPath, task.original_name, options);
 
         // Map result blocks back to original page indices
@@ -711,9 +721,11 @@ app.openapi(reprocessRoute, async (c): Promise<any> => {
           $content_list: JSON.stringify(merged),
           $pages: JSON.stringify(existingPages),
         });
+        stmt.setProgress.run({ $id: task.id, $progress: null });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         stmt.setError.run({ $id: task.id, $error: message });
+        stmt.setProgress.run({ $id: task.id, $progress: null });
       } finally {
         if (tmpPath) try { unlinkSync(tmpPath); } catch { /* ignore */ }
       }
