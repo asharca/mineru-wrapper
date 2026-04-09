@@ -193,7 +193,7 @@ const SyncResultSchema = z.object({
 
 const UploadRequestSchema = z.object({
   file: z.any(),
-  backend: z.enum(["pipeline", "vlm-auto-engine", "hybrid-auto-engine"]).optional(),
+  backend: z.enum(["pipeline", "vlm-auto-engine", "hybrid-auto-engine", "vlm-http-client", "hybrid-http-client"]).optional(),
   lang: z.enum(["ch", "en", "japan", "korean", "latin", "arabic", "cyrillic", "devanagari"]).optional(),
   parse_method: z.enum(["auto", "ocr", "txt"]).optional(),
   formula_enable: z.enum(["true", "false"]).optional(),
@@ -204,7 +204,7 @@ const UploadRequestSchema = z.object({
 
 const ApiParseRequestSchema = z.object({
   file: z.any(),
-  backend: z.enum(["pipeline", "vlm-auto-engine", "hybrid-auto-engine"]).optional(),
+  backend: z.enum(["pipeline", "vlm-auto-engine", "hybrid-auto-engine", "vlm-http-client", "hybrid-http-client"]).optional(),
   lang_list: z.union([z.string(), z.array(z.string())]).optional(),
   parse_method: z.enum(["auto", "ocr", "txt"]).optional(),
   formula_enable: z.enum(["true", "false"]).optional(),

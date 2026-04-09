@@ -28,7 +28,6 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -163,12 +162,14 @@ interface PdfViewerProps {
   onRotate: () => void;
   onConfirmRotate: () => void;
   rotating: boolean;
+  rotatingPageNums?: number[];
 }
 
 function PdfViewer({
   src, blocks, activeIndex, onHover, onClick,
   pageWidths, pageHeights, currentPage, onPageChange,
   pageRotation, totalRotatedPages, onRotate, onConfirmRotate, rotating,
+  rotatingPageNums,
 }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageSize, setPageSize] = useState<{ w: number; h: number } | null>(null);
@@ -297,6 +298,13 @@ function PdfViewer({
               renderTextLayer={false}
               renderAnnotationLayer={false}
             />
+            {/* Recognizing overlay for pages currently being re-OCR'd */}
+            {rotatingPageNums?.includes(currentPage) && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/75 z-10 gap-2 rounded">
+                <Loader2 className="h-7 w-7 animate-spin text-warning" />
+                <span className="text-sm font-medium text-muted-foreground">Recognizing...</span>
+              </div>
+            )}
             {/* Hide overlays when rotated (they won't match) */}
             {pageRotation === 0 && pageBlocks.length > 0 && pageSize && (
               <svg
@@ -531,6 +539,8 @@ export default function TaskDetail() {
   const [imageRotation, setImageRotation] = useState(0);
   const [pageRotations, setPageRotations] = useState<Record<number, number>>({});
   const [rotating, setRotating] = useState(false);
+  // Pages (1-indexed) currently being re-OCR'd after rotation (no global progress bar)
+  const [rotatingPageNums, setRotatingPageNums] = useState<number[]>([]);
 
   // Re-OCR dialog
   const [reprocessDialogOpen, setReprocessDialogOpen] = useState(false);
@@ -659,6 +669,27 @@ export default function TaskDetail() {
     }
   }, []);
 
+  // Poll for page-rotation re-OCR without showing the global progress bar.
+  // Keeps task.status as "completed" in the UI until done, then navigates to targetPage.
+  const pollPageRotationUntilDone = useCallback(async (taskId: string, targetPage: number) => {
+    try {
+      const t = await getTask(taskId);
+      if (t.status === "pending" || t.status === "processing") {
+        setTimeout(() => pollPageRotationUntilDone(taskId, targetPage), 2000);
+      } else {
+        setTask(t);
+        setFileVersion((v) => v + 1);
+        setRotating(false);
+        setRotatingPageNums([]);
+        setPdfPage(targetPage);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rotation failed");
+      setRotating(false);
+      setRotatingPageNums([]);
+    }
+  }, []);
+
   const confirmRotateImage = async () => {
     if (!task || imageRotation === 0) return;
     setRotating(true);
@@ -678,21 +709,28 @@ export default function TaskDetail() {
     if (!task) return;
     // Collect all pages that have been rotated
     const rotations: Record<string, number> = {};
+    const rotatedPageNums: number[] = [];
     for (const [pageIdx, angle] of Object.entries(pageRotations)) {
-      if (angle !== 0) rotations[pageIdx] = angle;
+      if (angle !== 0) {
+        rotations[pageIdx] = angle;
+        rotatedPageNums.push(parseInt(pageIdx) + 1);
+      }
     }
     if (Object.keys(rotations).length === 0) return;
 
+    const targetPage = pdfPage;
     setRotating(true);
     setEditing(false);
+    setRotatingPageNums(rotatedPageNums);
     try {
       await reprocessTask(task.id, { rotations });
-      setTask({ ...task, status: "processing" } as OcrTask);
       setPageRotations({});
-      setTimeout(() => pollUntilDone(task.id), 1000);
+      // Use page-rotation poll: no global progress bar, navigates to target page when done
+      setTimeout(() => pollPageRotationUntilDone(task.id, targetPage), 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rotation failed");
       setRotating(false);
+      setRotatingPageNums([]);
     }
   };
 
@@ -838,24 +876,14 @@ export default function TaskDetail() {
       </div>
 
       {/* Processing / error states */}
-      {isProcessing && (() => {
-        let stateLabel = "Processing";
-        if (task.progress) {
-          try {
-            const p = JSON.parse(task.progress) as { state?: string; message?: string };
-            stateLabel = p.message || p.state || "Processing";
-          } catch { /* ignore */ }
-        }
-        return (
-          <div className="mx-4 mt-3 rounded-lg border border-warning/50 bg-warning/5 p-4">
-            <div className="flex items-center gap-2 mb-2 text-sm font-medium">
-              <Loader2 className="h-4 w-4 animate-spin text-warning" />
-              {stateLabel}...
-            </div>
-            <Progress value={null} className="h-2 [&_[data-slot=progress-indicator]]:bg-warning" />
+      {isProcessing && rotatingPageNums.length === 0 && (
+        <div className="mx-4 mt-3 rounded-lg border border-warning/50 bg-warning/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Loader2 className="h-4 w-4 animate-spin text-warning" />
+            Recognizing...
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       {task.status === "failed" && (
         <Alert variant="destructive" className="mx-4 mt-3">
@@ -930,6 +958,7 @@ export default function TaskDetail() {
                         onRotate={handleRotatePdfPage}
                         onConfirmRotate={confirmRotatePdfPage}
                         rotating={rotating}
+                        rotatingPageNums={rotatingPageNums}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
