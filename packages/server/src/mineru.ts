@@ -128,14 +128,14 @@ function renderPdfPageToImage(pdfBytes: ArrayBuffer, pageIndex: number): Buffer 
  * Auto-rotate a scanned PDF:
  * 1. Render each page to image via mupdf
  * 2. Send all page images to PaddleOCR service for per-page direction detection
- * 3. Rebuild PDF: each page rotated to its best detected angle
+ * 3. Apply rotation via pdf-lib metadata (setRotation), preserving vector quality
  */
 async function autoRotatePdf(filePath: string): Promise<void> {
   const pdfBytes = await Bun.file(filePath).arrayBuffer();
   const doc = mupdf.Document.openDocument(pdfBytes, "application/pdf");
   const numPages = doc.countPages();
 
-  // Step 1: Render all pages to PNG buffers
+  // Step 1: Render all pages to PNG buffers for angle detection
   const pageBuffers: Buffer[] = [];
   for (let i = 0; i < numPages; i++) {
     pageBuffers.push(renderPdfPageToImage(pdfBytes, i));
@@ -154,26 +154,18 @@ async function autoRotatePdf(filePath: string): Promise<void> {
     `[auto-rotate] pdf page angles: ${angles.map((a, i) => `p${i + 1}=${a}°`).join(", ")}`
   );
 
-  // Step 3: Rebuild PDF with per-page rotation
-  const newPdf = await PDFDocument.create();
-
+  // Step 3: Apply rotation via pdf-lib metadata (unified with manual rotate)
+  const srcPdf = await PDFDocument.load(pdfBytes);
   for (let i = 0; i < numPages; i++) {
     const angle = angles[i];
-    const pageBuf = pageBuffers[i];
-
-    let imageData: Buffer;
-    if (angle === 0) {
-      imageData = pageBuf;
-    } else {
-      imageData = await sharp(pageBuf).rotate(angle).jpeg({ quality: 90 }).toBuffer();
+    if (angle !== 0) {
+      const page = srcPdf.getPage(i);
+      page.setRotation(degrees(angle));
+      console.log(`[auto-rotate] pdf page ${i + 1}/${numPages} set rotation ${angle}°`);
     }
-
-    const img = await newPdf.embedJpg(imageData);
-    const newPage = newPdf.addPage([img.width, img.height]);
-    newPage.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
   }
 
-  const rotatedBytes = await newPdf.save();
+  const rotatedBytes = await srcPdf.save();
   await Bun.write(filePath, rotatedBytes);
 }
 
@@ -194,7 +186,7 @@ async function autoRotateFile(filePath: string): Promise<void> {
 /**
  * Manually rotate a file by a specific angle.
  * For images: rotate with sharp.
- * For PDFs: render pages to images, rotate specified pages, rebuild PDF.
+ * For PDFs: apply rotation via pdf-lib metadata (setRotation).
  */
 export async function rotateFile(
   filePath: string,
