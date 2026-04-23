@@ -104,7 +104,23 @@ export const stmt = {
   ),
   count: db.prepare(`SELECT COUNT(*) as total FROM tasks`),
   countBySource: db.prepare(`SELECT COUNT(*) as total FROM tasks WHERE source=?1`),
+  countSearch: db.prepare(`SELECT COUNT(*) as total FROM tasks WHERE original_name LIKE ?1`),
+  countBySourceSearch: db.prepare(`SELECT COUNT(*) as total FROM tasks WHERE source=?1 AND original_name LIKE ?2`),
+  listSearch: db.prepare(
+    `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
+            created_at, completed_at, file_size
+     FROM tasks WHERE original_name LIKE ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3`
+  ),
+  listBySourceSearch: db.prepare(
+    `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
+            created_at, completed_at, file_size
+     FROM tasks WHERE source=?1 AND original_name LIKE ?2 ORDER BY created_at DESC LIMIT ?3 OFFSET ?4`
+  ),
   deleteById: db.prepare(`DELETE FROM tasks WHERE id=?1`),
+  deleteByIds: (ids: string[]) => {
+    const placeholders = ids.map((_, i) => `?${i + 1}`).join(",");
+    return db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...ids);
+  },
 };
 
 export default db;

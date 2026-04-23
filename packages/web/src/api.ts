@@ -74,10 +74,12 @@ export async function uploadFile(
 export async function getTasks(
   page = 1,
   limit = 20,
-  source?: string
+  source?: string,
+  search?: string
 ): Promise<TaskListResponse> {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (source) params.set("source", source);
+  if (search) params.set("search", search);
   const res = await fetch(`/tasks?${params}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -92,6 +94,16 @@ export async function getTask(id: string): Promise<OcrTask> {
 export async function deleteTask(id: string): Promise<void> {
   const res = await fetch(`/tasks/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
+}
+
+export async function batchDeleteTasks(ids: string[]): Promise<{ deleted: number }> {
+  const res = await fetch("/tasks/batch-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function updateTaskContent(

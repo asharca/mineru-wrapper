@@ -7,8 +7,10 @@ import { v4 as uuid } from "uuid";
 import type { ContentBlock } from "./db.ts";
 
 const DEFAULT_MINERU_URL = process.env.MINERU_URL || "http://10.0.10.2:8001";
+const PADDLEOCR_URL = process.env.PADDLEOCR_URL || "http://localhost:8000";
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif"]);
+const OFFICE_EXTS = new Set([".xlsx", ".xls", ".docx", ".pptx"]);
 
 export interface ParseOptions {
   backend?: string;
@@ -30,94 +32,81 @@ export interface ParseResult {
   raw: unknown;
 }
 
-const ROTATION_CANDIDATES = [0, 90, 180, 270] as const;
+/** Max dimension for probe thumbnails */
 const PROBE_MAX = 800;
 
-/**
- * Send a small image to MineRU and return the length of recognized text.
- */
-async function probeMineru(buf: Buffer, filename: string, mineruUrl: string): Promise<number> {
-  try {
-    const blob = new Blob([buf], { type: "image/png" });
-    const form = new FormData();
-    form.append("files", blob, filename);
-    form.append("return_md", "true");
-    form.append("backend", "pipeline");
-
-    const res = await fetch(`${mineruUrl}/file_parse`, {
-      method: "POST",
-      body: form,
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!res.ok) return 0;
-
-    const json = (await res.json()) as Record<string, unknown>;
-    const results = json.results as Record<string, Record<string, unknown>> | undefined;
-    if (!results) return 0;
-
-    let totalLen = 0;
-    for (const entry of Object.values(results)) {
-      totalLen += String(entry.md_content || "").trim().length;
-    }
-    return totalLen;
-  } catch {
-    return 0;
-  }
+/** Timeout for PaddleOCR service: 30s base + 15s per image */
+function paddleTimeoutMs(count: number): number {
+  return Math.max(30000, count * 15000);
 }
 
 /**
- * Try all 4 orientations via MineRU, pick the one that produces the most text.
+ * Detect best rotation angles for a batch of images via the PaddleOCR HTTP service.
+ * Sends binary image data; no local file paths needed.
  */
-async function detectBestRotation(buf: Buffer, mineruUrl: string, label = "image"): Promise<number> {
-  let thumb = buf;
-  const meta = await sharp(buf).metadata();
-  console.log(`[auto-rotate] ${label} input: ${meta.width}x${meta.height}, ${buf.length} bytes`);
+async function detectRotationsHttp(imageBuffers: Buffer[]): Promise<number[]> {
+  if (imageBuffers.length === 0) return [];
 
-  if ((meta.width ?? 0) > PROBE_MAX || (meta.height ?? 0) > PROBE_MAX) {
-    thumb = await sharp(buf).resize({ width: PROBE_MAX, height: PROBE_MAX, fit: "inside" }).png().toBuffer();
-    const thumbMeta = await sharp(thumb).metadata();
-    console.log(`[auto-rotate] ${label} thumbnail: ${thumbMeta.width}x${thumbMeta.height}`);
+  const form = new FormData();
+  for (let i = 0; i < imageBuffers.length; i++) {
+    const blob = new Blob([imageBuffers[i]], { type: "image/png" });
+    form.append("files", blob, `probe_${i}.png`);
   }
 
-  const probes = await Promise.all(
-    ROTATION_CANDIDATES.map(async (angle) => {
-      const rotated = angle === 0 ? thumb : await sharp(thumb).rotate(angle).toBuffer();
-      const score = await probeMineru(rotated, `probe_${angle}.png`, mineruUrl);
-      return { angle, score };
-    })
-  );
+  try {
+    const res = await fetch(`${PADDLEOCR_URL}/detect`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(paddleTimeoutMs(imageBuffers.length)),
+    });
 
-  for (const p of probes) {
-    console.log(`[auto-rotate] ${label} angle=${p.angle}° score=${p.score}`);
-  }
-
-  let bestAngle = 0;
-  let bestScore = -1;
-  for (const p of probes) {
-    if (p.score > bestScore) {
-      bestScore = p.score;
-      bestAngle = p.angle;
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`[auto-rotate] PaddleOCR service error ${res.status}: ${text}`);
+      return imageBuffers.map(() => 0);
     }
+
+    const json = (await res.json()) as { angles?: number[] };
+    if (Array.isArray(json.angles) && json.angles.length === imageBuffers.length) {
+      return json.angles;
+    }
+    console.error("[auto-rotate] Unexpected PaddleOCR response:", json);
+    return imageBuffers.map(() => 0);
+  } catch (e) {
+    console.error("[auto-rotate] PaddleOCR request failed:", e);
+    return imageBuffers.map(() => 0);
   }
-  console.log(`[auto-rotate] ${label} → best angle=${bestAngle}° (score=${bestScore})`);
-  return bestAngle;
 }
 
 /**
  * Auto-rotate an image:
- * 1. EXIF rotation via sharp
- * 2. Probe MineRU at 0/90/180/270, pick best orientation
+ * 1. Apply EXIF rotation via sharp
+ * 2. Send thumbnail to PaddleOCR service for direction detection
+ * 3. Rotate original image if needed
  */
-async function autoRotateImage(filePath: string, mineruUrl: string): Promise<void> {
+async function autoRotateImage(filePath: string): Promise<void> {
   const buf = await Bun.file(filePath).arrayBuffer();
+  // Step 1: Apply EXIF rotation
   let corrected = await sharp(Buffer.from(buf)).rotate().toBuffer();
 
-  const angle = await detectBestRotation(corrected, mineruUrl);
-  if (angle > 0) {
-    corrected = await sharp(corrected).rotate(angle).toBuffer();
+  // Step 2: Create thumbnail for direction detection
+  const meta = await sharp(corrected).metadata();
+  let thumb = corrected;
+  if ((meta.width ?? 0) > PROBE_MAX || (meta.height ?? 0) > PROBE_MAX) {
+    thumb = await sharp(corrected)
+      .resize({ width: PROBE_MAX, height: PROBE_MAX, fit: "inside" })
+      .png()
+      .toBuffer();
   }
 
-  await Bun.write(filePath, corrected);
+  const [angle] = await detectRotationsHttp([thumb]);
+  console.log(`[auto-rotate] image -> angle=${angle}°`);
+
+  // Step 3: Rotate original image if needed
+  if (angle > 0) {
+    corrected = await sharp(corrected).rotate(angle).toBuffer();
+    await Bun.write(filePath, corrected);
+  }
 }
 
 /** Scale factor for PDF rendering: 200 DPI (200/72 ≈ 2.78x) */
@@ -137,41 +126,51 @@ function renderPdfPageToImage(pdfBytes: ArrayBuffer, pageIndex: number): Buffer 
 
 /**
  * Auto-rotate a scanned PDF:
- * 1. Render first page to image via mupdf (real pixels, not metadata)
- * 2. Probe MineRU at 0/90/180/270 using image rotation (proven approach)
- * 3. If rotation needed, render all pages → rotate with sharp → rebuild PDF with pdf-lib
+ * 1. Render each page to image via mupdf
+ * 2. Send all page images to PaddleOCR service for per-page direction detection
+ * 3. Rebuild PDF: each page rotated to its best detected angle
  */
-async function autoRotatePdf(filePath: string, mineruUrl: string): Promise<void> {
+async function autoRotatePdf(filePath: string): Promise<void> {
   const pdfBytes = await Bun.file(filePath).arrayBuffer();
-
-  // Step 1: Render first page to image and detect best rotation
-  const firstPageImg = renderPdfPageToImage(pdfBytes, 0);
-  const angle = await detectBestRotation(firstPageImg, mineruUrl, "pdf");
-  if (angle === 0) return;
-
-  console.log(`[auto-rotate] pdf: rotating all pages by ${angle}°`);
-
-  // Step 2: Render all pages, rotate, rebuild PDF
   const doc = mupdf.Document.openDocument(pdfBytes, "application/pdf");
   const numPages = doc.countPages();
-  const matrix = mupdf.Matrix.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE);
 
+  // Step 1: Render all pages to PNG buffers
+  const pageBuffers: Buffer[] = [];
+  for (let i = 0; i < numPages; i++) {
+    pageBuffers.push(renderPdfPageToImage(pdfBytes, i));
+  }
+
+  // Step 2: Detect best angle for each page independently
+  const angles = await detectRotationsHttp(pageBuffers);
+
+  const needsRotation = angles.some((a) => a !== 0);
+  if (!needsRotation) {
+    console.log(`[auto-rotate] pdf: no rotation needed for any page`);
+    return;
+  }
+
+  console.log(
+    `[auto-rotate] pdf page angles: ${angles.map((a, i) => `p${i + 1}=${a}°`).join(", ")}`
+  );
+
+  // Step 3: Rebuild PDF with per-page rotation
   const newPdf = await PDFDocument.create();
 
   for (let i = 0; i < numPages; i++) {
-    const page = doc.loadPage(i);
-    const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
-    const png = pixmap.asPNG();
+    const angle = angles[i];
+    const pageBuf = pageBuffers[i];
 
-    // Rotate with sharp (actual pixel rotation)
-    const rotated = await sharp(Buffer.from(png)).rotate(angle).jpeg({ quality: 90 }).toBuffer();
+    let imageData: Buffer;
+    if (angle === 0) {
+      imageData = pageBuf;
+    } else {
+      imageData = await sharp(pageBuf).rotate(angle).jpeg({ quality: 90 }).toBuffer();
+    }
 
-    // Embed into new PDF
-    const img = await newPdf.embedJpg(rotated);
+    const img = await newPdf.embedJpg(imageData);
     const newPage = newPdf.addPage([img.width, img.height]);
     newPage.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
-
-    console.log(`[auto-rotate] pdf: page ${i + 1}/${numPages} done (${img.width}x${img.height})`);
   }
 
   const rotatedBytes = await newPdf.save();
@@ -180,14 +179,16 @@ async function autoRotatePdf(filePath: string, mineruUrl: string): Promise<void>
 
 /**
  * Auto-rotate entry point: handles both images and PDFs.
+ * Office files (.docx, .xlsx, .pptx) and CSV are skipped.
  */
-async function autoRotateFile(filePath: string, mineruUrl: string): Promise<void> {
+async function autoRotateFile(filePath: string): Promise<void> {
   const ext = extname(filePath).toLowerCase();
   if (IMAGE_EXTS.has(ext)) {
-    await autoRotateImage(filePath, mineruUrl);
+    await autoRotateImage(filePath);
   } else if (ext === ".pdf") {
-    await autoRotatePdf(filePath, mineruUrl);
+    await autoRotatePdf(filePath);
   }
+  // .xlsx, .xls, .docx, .pptx, .csv — no rotation needed
 }
 
 /**
@@ -195,7 +196,11 @@ async function autoRotateFile(filePath: string, mineruUrl: string): Promise<void
  * For images: rotate with sharp.
  * For PDFs: render pages to images, rotate specified pages, rebuild PDF.
  */
-export async function rotateFile(filePath: string, angle: number, pageIndices?: number[]): Promise<void> {
+export async function rotateFile(
+  filePath: string,
+  angle: number,
+  pageIndices?: number[]
+): Promise<void> {
   const validAngles = [90, 180, 270];
   if (!validAngles.includes(angle)) return;
 
@@ -214,7 +219,6 @@ export async function rotateFile(filePath: string, angle: number, pageIndices?: 
     const srcPdf = await PDFDocument.load(pdfBytes);
     const numPages = srcPdf.getPageCount();
 
-    // Which pages to rotate (default: all)
     const rotateSet = pageIndices ? new Set(pageIndices) : null;
 
     for (let i = 0; i < numPages; i++) {
@@ -239,7 +243,10 @@ export async function rotateFile(filePath: string, angle: number, pageIndices?: 
  * Extract specific pages from a PDF into a temporary file.
  * Returns the temp file path. Caller is responsible for cleanup.
  */
-export async function extractPdfPages(filePath: string, pageIndices: number[]): Promise<string> {
+export async function extractPdfPages(
+  filePath: string,
+  pageIndices: number[]
+): Promise<string> {
   const pdfBytes = await Bun.file(filePath).arrayBuffer();
   const srcPdf = await PDFDocument.load(pdfBytes);
   const newPdf = await PDFDocument.create();
@@ -254,7 +261,19 @@ export async function extractPdfPages(filePath: string, pageIndices: number[]): 
   return tmpPath;
 }
 
-function buildForm(filePath: string, originalName: string, options: ParseOptions): FormData {
+function cleanFile(path: string) {
+  try {
+    unlinkSync(path);
+  } catch {
+    /* ignore */
+  }
+}
+
+function buildForm(
+  filePath: string,
+  originalName: string,
+  options: ParseOptions
+): FormData {
   const form = new FormData();
   const fileBlob = Bun.file(filePath);
   form.append("files", fileBlob, originalName);
@@ -285,12 +304,15 @@ function buildForm(filePath: string, originalName: string, options: ParseOptions
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 600_000;
 
-type ProgressCallback = (progress: { state: string; message?: string }) => void;
+type ProgressCallback = (progress: {
+  state: string;
+  message?: string;
+}) => void;
 
 async function submitAndPoll(
   mineruUrl: string,
   form: FormData,
-  onProgress?: ProgressCallback,
+  onProgress?: ProgressCallback
 ): Promise<Record<string, unknown>> {
   const submitRes = await fetch(`${mineruUrl}/tasks`, {
     method: "POST",
@@ -307,7 +329,8 @@ async function submitAndPoll(
   const taskId = submitJson.task_id as string;
   if (!taskId) throw new Error("MineRU did not return a task_id");
 
-  const queuedAhead = typeof submitJson.queued_ahead === "number" ? submitJson.queued_ahead : 0;
+  const queuedAhead =
+    typeof submitJson.queued_ahead === "number" ? submitJson.queued_ahead : 0;
   onProgress?.({
     state: "pending",
     message: queuedAhead > 0 ? `Queued (${queuedAhead} ahead)` : "Queued",
@@ -326,8 +349,14 @@ async function submitAndPoll(
     const state = String(statusJson.status || "unknown");
 
     if (state === "pending") {
-      const qa = typeof statusJson.queued_ahead === "number" ? statusJson.queued_ahead : 0;
-      onProgress?.({ state, message: qa > 0 ? `Queued (${qa} ahead)` : "Queued" });
+      const qa =
+        typeof statusJson.queued_ahead === "number"
+          ? statusJson.queued_ahead
+          : 0;
+      onProgress?.({
+        state,
+        message: qa > 0 ? `Queued (${qa} ahead)` : "Queued",
+      });
     } else if (state === "running" || state === "processing") {
       onProgress?.({ state, message: "Recognizing" });
     }
@@ -339,13 +368,16 @@ async function submitAndPoll(
       });
       if (!resultRes.ok) {
         const text = await resultRes.text();
-        throw new Error(`MineRU result fetch failed ${resultRes.status}: ${text}`);
+        throw new Error(
+          `MineRU result fetch failed ${resultRes.status}: ${text}`
+        );
       }
       return (await resultRes.json()) as Record<string, unknown>;
     }
 
     if (state === "failed" || state === "error") {
-      const errMsg = statusJson.error || statusJson.message || "MineRU task failed";
+      const errMsg =
+        statusJson.error || statusJson.message || "MineRU task failed";
       throw new Error(String(errMsg));
     }
   }
@@ -355,7 +387,7 @@ async function submitAndPoll(
 
 async function extractResults(
   json: Record<string, unknown>,
-  filePath: string,
+  filePath: string
 ): Promise<ParseResult> {
   let markdown = "";
   let contentList: ContentBlock[] = [];
@@ -373,16 +405,18 @@ async function extractResults(
       .join("\n\n---\n\n");
 
     for (const entry of entries) {
-      const cl = typeof entry.content_list === "string"
-        ? JSON.parse(entry.content_list)
-        : entry.content_list;
+      const cl =
+        typeof entry.content_list === "string"
+          ? JSON.parse(entry.content_list)
+          : entry.content_list;
       if (Array.isArray(cl)) {
         contentList = contentList.concat(cl as ContentBlock[]);
       }
 
-      const mj = typeof entry.middle_json === "string"
-        ? JSON.parse(entry.middle_json)
-        : entry.middle_json;
+      const mj =
+        typeof entry.middle_json === "string"
+          ? JSON.parse(entry.middle_json)
+          : entry.middle_json;
       if (mj?.pdf_info && Array.isArray(mj.pdf_info)) {
         for (const page of mj.pdf_info) {
           if (page.page_size) {
@@ -439,7 +473,7 @@ export async function parseFile(
   const mineruUrl = options.mineru_url || DEFAULT_MINERU_URL;
 
   if (options.auto_rotate) {
-    await autoRotateFile(filePath, mineruUrl);
+    await autoRotateFile(filePath);
   }
 
   const form = buildForm(filePath, originalName, options);

@@ -1,6 +1,8 @@
 services:
   ocr-center:
     build: .
+    ports:
+      - "3002:3001"
     environment:
       - MINERU_URL=http://10.0.10.2:8001
       - PADDLEOCR_URL=http://paddleocr:8000
@@ -17,6 +19,8 @@ services:
     build:
       context: ./packages/paddleocr
       dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
     environment:
       - PORT=8000
     restart: unless-stopped

@@ -20,4 +20,5 @@ console.log(`MineRU endpoint: ${process.env.MINERU_URL || "http://10.0.10.2:8001
 export default {
   port: PORT,
   fetch: app.fetch,
+  maxRequestBodySize: 2 * 1024 * 1024 * 1024, // 2 GiB
 };

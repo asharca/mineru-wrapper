@@ -12,6 +12,7 @@ mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED_EXTS = new Set([
   ".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif",
+  ".xlsx", ".xls", ".docx", ".pptx",
 ]);
 
 const MIME_MAP: Record<string, string> = {
@@ -22,6 +23,10 @@ const MIME_MAP: Record<string, string> = {
   ".tiff": "image/tiff",
   ".bmp": "image/bmp",
   ".gif": "image/gif",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xls": "application/vnd.ms-excel",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".mjs": "application/javascript",
   ".js": "application/javascript",
 };
@@ -200,7 +205,7 @@ const UploadRequestSchema = z.object({
   table_enable: z.enum(["true", "false"]).optional(),
   auto_rotate: z.enum(["true", "false"]).optional(),
   mineru_url: z.string().optional(),
-}).openapi("UploadRequest");
+}).openapi("UploadRequest",  { description: "Upload a PDF, image (PNG/JPG/TIFF/BMP/GIF), DOCX, XLSX, XLS, PPTX, or CSV file." });
 
 const ApiParseRequestSchema = z.object({
   file: z.any(),
@@ -512,12 +517,13 @@ const listTasksRoute = createRoute({
   path: "/tasks",
   tags: ["Tasks"],
   summary: "List tasks",
-  description: "Paginated list of OCR tasks. Optionally filter by source (web/api).",
+  description: "Paginated list of OCR tasks. Optionally filter by source (web/api) or search by filename.",
   request: {
     query: z.object({
       page: z.string().optional(),
       limit: z.string().optional(),
       source: z.enum(["web", "api"]).optional(),
+      search: z.string().optional(),
     }),
   },
   responses: {
@@ -533,16 +539,28 @@ app.openapi(listTasksRoute, (c) => {
   const limit = Math.min(100, Math.max(1, Number(c.req.query("limit")) || 20));
   const offset = (page - 1) * limit;
   const source = c.req.query("source");
+  const search = c.req.query("search");
+  const searchPattern = search ? `%${search}%` : null;
 
   let tasks: OcrTask[];
   let total: number;
 
   if (source === "web" || source === "api") {
-    tasks = stmt.listBySource.all(source, limit, offset) as OcrTask[];
-    total = (stmt.countBySource.get(source) as { total: number }).total;
+    if (searchPattern) {
+      tasks = stmt.listBySourceSearch.all(source, searchPattern, limit, offset) as OcrTask[];
+      total = (stmt.countBySourceSearch.get(source, searchPattern) as { total: number }).total;
+    } else {
+      tasks = stmt.listBySource.all(source, limit, offset) as OcrTask[];
+      total = (stmt.countBySource.get(source) as { total: number }).total;
+    }
   } else {
-    tasks = stmt.list.all(limit, offset) as OcrTask[];
-    total = (stmt.count.get() as { total: number }).total;
+    if (searchPattern) {
+      tasks = stmt.listSearch.all(searchPattern, limit, offset) as OcrTask[];
+      total = (stmt.countSearch.get(searchPattern) as { total: number }).total;
+    } else {
+      tasks = stmt.list.all(limit, offset) as OcrTask[];
+      total = (stmt.count.get() as { total: number }).total;
+    }
   }
 
   return c.json({
@@ -580,6 +598,46 @@ app.openapi(deleteTaskRoute, (c) => {
   cleanFile(join(UPLOAD_DIR, task.filename));
   stmt.deleteById.run(c.req.param("id"));
   return c.json({ message: "Deleted" });
+});
+
+const batchDeleteRoute = createRoute({
+  method: "post",
+  path: "/tasks/batch-delete",
+  tags: ["Tasks"],
+  summary: "Batch delete tasks",
+  description: "Delete multiple tasks and their uploaded files by ID.",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ ids: z.array(z.string().uuid()) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Deleted",
+      content: { "application/json": { schema: z.object({ deleted: z.number() }) } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+app.openapi(batchDeleteRoute, (c) => {
+  const body = c.req.valid("json");
+  const { ids } = body;
+  if (!ids.length) return c.json({ error: "No IDs provided" }, 400);
+
+  for (const id of ids) {
+    const task = stmt.getById.get(id) as OcrTask | undefined;
+    if (task) cleanFile(join(UPLOAD_DIR, task.filename));
+  }
+  stmt.deleteByIds(ids);
+  return c.json({ deleted: ids.length });
 });
 
 const updateContentRoute = createRoute({
@@ -800,7 +858,7 @@ app.doc("/api/openapi", {
   info: {
     title: "MineRU OCR Wrapper API",
     version: "1.0.0",
-    description: "OCR document parsing service powered by MineRU. Supports PDF, PNG, JPG, TIFF, BMP, GIF.",
+    description: "OCR document parsing service powered by MineRU. Supports PDF, PNG, JPG, TIFF, BMP, GIF, DOCX, XLSX, XLS, PPTX, CSV.",
   },
 });
 

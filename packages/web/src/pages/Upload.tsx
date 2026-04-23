@@ -43,6 +43,10 @@ export default function UploadPage() {
     accept: {
       "application/pdf": [".pdf"],
       "image/*": [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
     },
     multiple: false,
     disabled: uploading,
@@ -56,7 +60,7 @@ export default function UploadPage() {
         </div>
         <h2 className="text-2xl font-semibold tracking-tight">Upload Document</h2>
         <p className="text-sm text-muted-foreground mt-1.5">
-          Drag & drop a PDF or image to extract text with OCR
+          Drag & drop a PDF, image, Word, or Excel file to extract text
         </p>
       </div>
 
@@ -95,7 +99,7 @@ export default function UploadPage() {
                 <div className="text-center">
                   <p className="font-medium">Drag & drop your file here</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    or click to browse &middot; PDF, PNG, JPG, TIFF, BMP, GIF
+                    or click to browse &middot; PDF, PNG, JPG, TIFF, BMP, GIF, DOCX, XLSX, XLS, PPTX
                   </p>
                 </div>
               </>
