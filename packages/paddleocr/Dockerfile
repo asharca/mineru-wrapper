@@ -2,10 +2,8 @@ FROM python:3.10-bookworm
 
 WORKDIR /app
 
-# Use Aliyun mirrors for faster apt in China
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN apt-get update -o Acquire::AllowInsecureRepositories=true \
+    && apt-get install -y --no-install-recommends --allow-unauthenticated \
        libgl1 \
     && rm -rf /var/lib/apt/lists/*
 

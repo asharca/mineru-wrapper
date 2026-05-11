@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import dayjs from "dayjs";
+import { AlertCircle, ChevronLeft, ChevronRight, Search, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Trash2, ChevronLeft, ChevronRight, Search, X, AlertCircle } from "lucide-react";
-import { getTasks, deleteTask, batchDeleteTasks, type TaskListResponse } from "../api.ts";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -15,10 +15,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card } from "@/components/ui/card";
-import dayjs from "dayjs";
+import { cn } from "@/lib/utils";
+import { batchDeleteTasks, deleteTask, getTasks, type TaskListResponse } from "../api.ts";
 
-const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+const STATUS_MAP: Record<
+  string,
+  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
+> = {
   pending: { label: "Pending", variant: "secondary" },
   processing: { label: "Processing", variant: "outline" },
   completed: { label: "Completed", variant: "default" },
@@ -36,6 +39,25 @@ const FILTERS = [
   { value: "web", label: "Web" },
   { value: "api", label: "API" },
 ];
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query || !text) return <>{text}</>;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <mark key={i} style={{ background: "#fde047", borderRadius: "2px", padding: "0 1px" }}>
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -75,7 +97,9 @@ export default function HistoryPage() {
       }
     };
     doLoad();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [page, source, search]);
 
   // Reset to page 1 and clear selection when search/source changes
@@ -169,7 +193,10 @@ export default function HistoryPage() {
               key={f.value}
               variant={source === f.value ? "default" : "outline"}
               size="sm"
-              onClick={() => { setSource(f.value); setPage(1); }}
+              onClick={() => {
+                setSource(f.value);
+                setPage(1);
+              }}
             >
               {f.label}
             </Button>
@@ -202,7 +229,12 @@ export default function HistoryPage() {
         <div className="flex items-center gap-2 mb-4 px-4 py-2.5 rounded-lg border border-destructive/30 bg-destructive/5 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span className="flex-1">{error}</span>
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-destructive" onClick={clearError}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-destructive"
+            onClick={clearError}
+          >
             Dismiss
           </Button>
         </div>
@@ -212,7 +244,7 @@ export default function HistoryPage() {
       <div
         className={cn(
           "flex items-center gap-3 mb-3 px-4 py-2.5 rounded-lg border bg-muted/60 transition-all duration-200 overflow-hidden",
-          selected.size > 0 ? "opacity-100 max-h-16" : "opacity-0 max-h-0 py-0 border-transparent"
+          selected.size > 0 ? "opacity-100 max-h-16" : "opacity-0 max-h-0 py-0 border-transparent",
         )}
       >
         <span className="text-sm font-medium">{selected.size} selected</span>
@@ -283,13 +315,24 @@ export default function HistoryPage() {
                           aria-label={`Select ${t.original_name}`}
                         />
                       </TableCell>
-                      <TableCell className="max-w-[200px] truncate font-medium">
-                        <Link to={`/task/${t.id}`} className="text-primary hover:underline">
-                          {t.original_name}
+                      <TableCell className="max-w-[260px] font-medium">
+                        <Link
+                          to={`/task/${t.id}`}
+                          className="text-primary hover:underline truncate block"
+                        >
+                          <HighlightText text={t.original_name} query={search} />
                         </Link>
+                        {search && t.snippet && (
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 font-normal">
+                            <HighlightText text={t.snippet} query={search} />
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={t.source === "web" ? "secondary" : "outline"} className="text-[11px]">
+                        <Badge
+                          variant={t.source === "web" ? "secondary" : "outline"}
+                          className="text-[11px]"
+                        >
                           {t.source.toUpperCase()}
                         </Badge>
                       </TableCell>
@@ -299,21 +342,30 @@ export default function HistoryPage() {
                           variant={status.variant}
                           className={cn(
                             t.status === "processing" && "border-warning text-warning",
-                            t.status === "completed" && "border-success text-success bg-success/10"
+                            t.status === "completed" && "border-success text-success bg-success/10",
                           )}
                         >
                           {status.label}
-                          {t.status === "processing" && t.progress && (() => {
-                            try {
-                              const p = JSON.parse(t.progress) as { message?: string };
-                              if (p.message) return <span className="ml-1 opacity-70">{p.message}</span>;
-                            } catch { /* ignore */ }
-                            return null;
-                          })()}
+                          {t.status === "processing" &&
+                            t.progress &&
+                            (() => {
+                              try {
+                                const p = JSON.parse(t.progress) as { message?: string };
+                                if (p.message)
+                                  return <span className="ml-1 opacity-70">{p.message}</span>;
+                              } catch {
+                                /* ignore */
+                              }
+                              return null;
+                            })()}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{formatSize(t.file_size)}</TableCell>
-                      <TableCell className="text-muted-foreground">{dayjs(t.created_at).format("MM-DD HH:mm")}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatSize(t.file_size)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {dayjs(t.created_at).format("MM-DD HH:mm")}
+                      </TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"

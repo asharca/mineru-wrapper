@@ -1,8 +1,8 @@
-import sharp from "sharp";
-import { PDFDocument, degrees } from "pdf-lib";
-import * as mupdf from "mupdf";
-import { extname, dirname, join } from "path";
 import { mkdirSync, unlinkSync } from "fs";
+import * as mupdf from "mupdf";
+import { dirname, extname, join } from "path";
+import { degrees, PDFDocument } from "pdf-lib";
+import sharp from "sharp";
 import { v4 as uuid } from "uuid";
 import type { ContentBlock } from "./db.ts";
 
@@ -151,7 +151,7 @@ async function autoRotatePdf(filePath: string): Promise<void> {
   }
 
   console.log(
-    `[auto-rotate] pdf page angles: ${angles.map((a, i) => `p${i + 1}=${a}°`).join(", ")}`
+    `[auto-rotate] pdf page angles: ${angles.map((a, i) => `p${i + 1}=${a}°`).join(", ")}`,
   );
 
   // Step 3: Apply rotation via pdf-lib metadata (unified with manual rotate)
@@ -191,7 +191,7 @@ async function autoRotateFile(filePath: string): Promise<void> {
 export async function rotateFile(
   filePath: string,
   angle: number,
-  pageIndices?: number[]
+  pageIndices?: number[],
 ): Promise<void> {
   const validAngles = [90, 180, 270];
   if (!validAngles.includes(angle)) return;
@@ -235,10 +235,7 @@ export async function rotateFile(
  * Extract specific pages from a PDF into a temporary file.
  * Returns the temp file path. Caller is responsible for cleanup.
  */
-export async function extractPdfPages(
-  filePath: string,
-  pageIndices: number[]
-): Promise<string> {
+export async function extractPdfPages(filePath: string, pageIndices: number[]): Promise<string> {
   const pdfBytes = await Bun.file(filePath).arrayBuffer();
   const srcPdf = await PDFDocument.load(pdfBytes);
   const newPdf = await PDFDocument.create();
@@ -261,11 +258,7 @@ function cleanFile(path: string) {
   }
 }
 
-function buildForm(
-  filePath: string,
-  originalName: string,
-  options: ParseOptions
-): FormData {
+function buildForm(filePath: string, originalName: string, options: ParseOptions): FormData {
   const form = new FormData();
   const fileBlob = Bun.file(filePath);
   form.append("files", fileBlob, originalName);
@@ -283,12 +276,10 @@ function buildForm(
   if (options.parse_method) form.append("parse_method", options.parse_method);
   if (options.formula_enable !== undefined)
     form.append("formula_enable", String(options.formula_enable));
-  if (options.table_enable !== undefined)
-    form.append("table_enable", String(options.table_enable));
+  if (options.table_enable !== undefined) form.append("table_enable", String(options.table_enable));
   if (options.start_page_id !== undefined)
     form.append("start_page_id", String(options.start_page_id));
-  if (options.end_page_id !== undefined)
-    form.append("end_page_id", String(options.end_page_id));
+  if (options.end_page_id !== undefined) form.append("end_page_id", String(options.end_page_id));
 
   return form;
 }
@@ -296,15 +287,12 @@ function buildForm(
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 600_000;
 
-type ProgressCallback = (progress: {
-  state: string;
-  message?: string;
-}) => void;
+type ProgressCallback = (progress: { state: string; message?: string }) => void;
 
 async function submitAndPoll(
   mineruUrl: string,
   form: FormData,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
 ): Promise<Record<string, unknown>> {
   const submitRes = await fetch(`${mineruUrl}/tasks`, {
     method: "POST",
@@ -321,8 +309,7 @@ async function submitAndPoll(
   const taskId = submitJson.task_id as string;
   if (!taskId) throw new Error("MineRU did not return a task_id");
 
-  const queuedAhead =
-    typeof submitJson.queued_ahead === "number" ? submitJson.queued_ahead : 0;
+  const queuedAhead = typeof submitJson.queued_ahead === "number" ? submitJson.queued_ahead : 0;
   onProgress?.({
     state: "pending",
     message: queuedAhead > 0 ? `Queued (${queuedAhead} ahead)` : "Queued",
@@ -341,10 +328,7 @@ async function submitAndPoll(
     const state = String(statusJson.status || "unknown");
 
     if (state === "pending") {
-      const qa =
-        typeof statusJson.queued_ahead === "number"
-          ? statusJson.queued_ahead
-          : 0;
+      const qa = typeof statusJson.queued_ahead === "number" ? statusJson.queued_ahead : 0;
       onProgress?.({
         state,
         message: qa > 0 ? `Queued (${qa} ahead)` : "Queued",
@@ -360,16 +344,13 @@ async function submitAndPoll(
       });
       if (!resultRes.ok) {
         const text = await resultRes.text();
-        throw new Error(
-          `MineRU result fetch failed ${resultRes.status}: ${text}`
-        );
+        throw new Error(`MineRU result fetch failed ${resultRes.status}: ${text}`);
       }
       return (await resultRes.json()) as Record<string, unknown>;
     }
 
     if (state === "failed" || state === "error") {
-      const errMsg =
-        statusJson.error || statusJson.message || "MineRU task failed";
+      const errMsg = statusJson.error || statusJson.message || "MineRU task failed";
       throw new Error(String(errMsg));
     }
   }
@@ -379,15 +360,13 @@ async function submitAndPoll(
 
 async function extractResults(
   json: Record<string, unknown>,
-  filePath: string
+  filePath: string,
 ): Promise<ParseResult> {
   let markdown = "";
   let contentList: ContentBlock[] = [];
-  let pages: { width: number; height: number }[] = [];
+  const pages: { width: number; height: number }[] = [];
 
-  const results = json.results as
-    | Record<string, Record<string, unknown>>
-    | undefined;
+  const results = json.results as Record<string, Record<string, unknown>> | undefined;
 
   if (results && typeof results === "object") {
     const entries = Object.values(results);
@@ -406,9 +385,7 @@ async function extractResults(
       }
 
       const mj =
-        typeof entry.middle_json === "string"
-          ? JSON.parse(entry.middle_json)
-          : entry.middle_json;
+        typeof entry.middle_json === "string" ? JSON.parse(entry.middle_json) : entry.middle_json;
       if (mj?.pdf_info && Array.isArray(mj.pdf_info)) {
         for (const page of mj.pdf_info) {
           if (page.page_size) {
@@ -460,7 +437,7 @@ async function extractResults(
 export async function parseFile(
   filePath: string,
   originalName: string,
-  options: ParseOptions = {}
+  options: ParseOptions = {},
 ): Promise<ParseResult> {
   const mineruUrl = options.mineru_url || DEFAULT_MINERU_URL;
 

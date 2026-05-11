@@ -1,35 +1,103 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
 import { Allotment } from "allotment";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
 import { Document, Page, pdfjs } from "react-pdf";
+import { Link, useParams } from "react-router-dom";
+import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
+import rehypeRaw from "rehype-raw";
+import remarkGfm from "remark-gfm";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import {
-  ArrowLeft, Copy, Check, Loader2, ChevronLeft, ChevronRight,
-  Download, FileText, LayoutList, PanelLeftClose, PanelLeft,
-  RotateCw, Pencil, Save, X, RefreshCw, CheckCircle,
+  ArrowLeft,
+  Check,
+  CheckCircle,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  Download,
+  FileText,
+  LayoutList,
+  Loader2,
+  PanelLeft,
+  PanelLeftClose,
+  Pencil,
+  RefreshCw,
+  RotateCw,
+  Save,
+  Search,
+  X,
 } from "lucide-react";
-import {
-  getTask, fileUrl, updateTaskContent, reprocessTask,
-  type ContentBlock, type OcrTask,
-} from "../api.ts";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter,
-  DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
+  type ContentBlock,
+  fileUrl,
+  getTask,
+  type OcrTask,
+  reprocessTask,
+  updateTaskContent,
+} from "../api.ts";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
+// ---- Utilities ----
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query || !text) return <>{text}</>;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <mark
+            key={i}
+            className="search-highlight"
+            style={{ background: "#fde047", borderRadius: "2px", padding: "0 1px" }}
+          >
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
+function highlightMarkdown(md: string, query: string): string {
+  if (!query || query.trim().length < 1) return md;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return md.replace(
+    new RegExp(`(${escaped})`, "gi"),
+    '<mark class="search-highlight" style="background:#fde047;border-radius:2px;padding:0 1px;">$1</mark>',
+  );
+}
 
 // ---- Copy button ----
 
@@ -49,7 +117,7 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
           size="sm"
           className={cn(
             "h-6 px-2 text-[11px] gap-1",
-            copied && "bg-success text-success-foreground hover:bg-success/90"
+            copied && "bg-success text-success-foreground hover:bg-success/90",
           )}
           onClick={handleCopy}
         >
@@ -65,9 +133,13 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
 // ---- Block type colors ----
 
 const TYPE_COLORS: Record<string, string> = {
-  text: "#3b82f6", title: "#ef4444", table: "#22c55e",
-  figure: "#a855f7", image: "#a855f7",
-  formula: "#f59e0b", interline_equation: "#f59e0b",
+  text: "#3b82f6",
+  title: "#ef4444",
+  table: "#22c55e",
+  figure: "#a855f7",
+  image: "#a855f7",
+  formula: "#f59e0b",
+  interline_equation: "#f59e0b",
   list: "#0ea5e9",
 };
 
@@ -95,7 +167,12 @@ function ImageOverlay({ src, blocks, activeIndex, onHover, onClick, rotation }: 
     img.src = src;
   }, [src]);
 
-  if (!imgSize) return <div className="flex items-center justify-center h-full text-muted-foreground">Loading image...</div>;
+  if (!imgSize)
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        Loading image...
+      </div>
+    );
 
   const { w, h } = imgSize;
   const sx = w / 1000;
@@ -113,32 +190,64 @@ function ImageOverlay({ src, blocks, activeIndex, onHover, onClick, rotation }: 
         <svg
           viewBox={`0 0 ${w} ${h}`}
           style={{
-            width: "100%", height: "auto", display: "block",
+            width: "100%",
+            height: "auto",
+            display: "block",
             transform: `rotate(${rotation}deg)`,
             transition: "transform 0.3s ease",
           }}
         >
           <image href={src} x={0} y={0} width={w} height={h} />
-          {rotation === 0 && blocks.map((block, i) => {
-            const [bx0, by0, bx1, by1] = block.bbox;
-            const x0 = bx0 * sx, y0 = by0 * sy, x1 = bx1 * sx, y1 = by1 * sy;
-            const isActive = activeIndex === i;
-            const c = typeColor(block.type);
-            return (
-              <g key={i} style={{ cursor: "pointer" }}
-                onMouseEnter={() => onHover(i)} onMouseLeave={() => onHover(null)} onClick={() => onClick(i)}
-              >
-                <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0}
-                  fill={isActive ? `${c}33` : "transparent"}
-                  stroke={c} strokeWidth={isActive ? 3 : 1.5} strokeOpacity={isActive ? 1 : 0.5} rx={2}
-                />
-                <rect x={x0} y={Math.max(0, y0 - labelH)} width={labelW} height={labelH} fill={c} rx={3} />
-                <text x={x0 + labelW / 2} y={Math.max(0, y0 - labelH) + labelH / 2}
-                  fill="white" fontSize={fontSize} fontWeight="bold" textAnchor="middle" dominantBaseline="central"
-                >{i + 1}</text>
-              </g>
-            );
-          })}
+          {rotation === 0 &&
+            blocks.map((block, i) => {
+              const [bx0, by0, bx1, by1] = block.bbox;
+              const x0 = bx0 * sx,
+                y0 = by0 * sy,
+                x1 = bx1 * sx,
+                y1 = by1 * sy;
+              const isActive = activeIndex === i;
+              const c = typeColor(block.type);
+              return (
+                <g
+                  key={i}
+                  style={{ cursor: "pointer" }}
+                  onMouseEnter={() => onHover(i)}
+                  onMouseLeave={() => onHover(null)}
+                  onClick={() => onClick(i)}
+                >
+                  <rect
+                    x={x0}
+                    y={y0}
+                    width={x1 - x0}
+                    height={y1 - y0}
+                    fill={isActive ? `${c}33` : "transparent"}
+                    stroke={c}
+                    strokeWidth={isActive ? 3 : 1.5}
+                    strokeOpacity={isActive ? 1 : 0.5}
+                    rx={2}
+                  />
+                  <rect
+                    x={x0}
+                    y={Math.max(0, y0 - labelH)}
+                    width={labelW}
+                    height={labelH}
+                    fill={c}
+                    rx={3}
+                  />
+                  <text
+                    x={x0 + labelW / 2}
+                    y={Math.max(0, y0 - labelH) + labelH / 2}
+                    fill="white"
+                    fontSize={fontSize}
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    {i + 1}
+                  </text>
+                </g>
+              );
+            })}
         </svg>
       </TransformComponent>
     </TransformWrapper>
@@ -166,9 +275,20 @@ interface PdfViewerProps {
 }
 
 function PdfViewer({
-  src, blocks, activeIndex, onHover, onClick,
-  pageWidths, pageHeights, currentPage, onPageChange,
-  pageRotation, totalRotatedPages, onRotate, onConfirmRotate, rotating,
+  src,
+  blocks,
+  activeIndex,
+  onHover,
+  onClick,
+  pageWidths,
+  pageHeights,
+  currentPage,
+  onPageChange,
+  pageRotation,
+  totalRotatedPages,
+  onRotate,
+  onConfirmRotate,
+  rotating,
   rotatingPageNums,
 }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
@@ -206,16 +326,24 @@ function PdfViewer({
         <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-muted/50 border-b shrink-0 flex-wrap">
           {numPages > 1 && (
             <>
-              <Button variant="ghost" size="icon" className="h-7 w-7"
-                disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                disabled={currentPage <= 1}
+                onClick={() => onPageChange(currentPage - 1)}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="text-xs text-muted-foreground tabular-nums min-w-[60px] text-center">
                 {currentPage} / {numPages}
               </span>
-              <Button variant="ghost" size="icon" className="h-7 w-7"
-                disabled={currentPage >= numPages} onClick={() => onPageChange(currentPage + 1)}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                disabled={currentPage >= numPages}
+                onClick={() => onPageChange(currentPage + 1)}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -227,8 +355,11 @@ function PdfViewer({
           <Tooltip>
             <TooltipTrigger>
               <Button
-                variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-                onClick={onRotate} disabled={rotating}
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                onClick={onRotate}
+                disabled={rotating}
               >
                 <RotateCw className="h-4 w-4" />
               </Button>
@@ -246,15 +377,17 @@ function PdfViewer({
             <Tooltip>
               <TooltipTrigger>
                 <Button
-                  variant="default" size="sm"
+                  variant="default"
+                  size="sm"
                   className="h-7 px-2.5 gap-1 text-xs"
                   onClick={onConfirmRotate}
                   disabled={rotating}
                 >
-                  {rotating
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <CheckCircle className="h-3.5 w-3.5" />
-                  }
+                  {rotating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-3.5 w-3.5" />
+                  )}
                   Re-OCR {totalRotatedPages === 1 ? "1 page" : `${totalRotatedPages} pages`}
                 </Button>
               </TooltipTrigger>
@@ -278,11 +411,15 @@ function PdfViewer({
       )}
 
       <div className="flex-1 overflow-auto">
-        <Document file={src} onLoadSuccess={onDocumentLoadSuccess} loading={
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading PDF...
-          </div>
-        }>
+        <Document
+          file={src}
+          onLoadSuccess={onDocumentLoadSuccess}
+          loading={
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading PDF...
+            </div>
+          }
+        >
           <div
             className="relative inline-block"
             style={{
@@ -319,25 +456,53 @@ function PdfViewer({
                   const [bx0, by0, bx1, by1] = block.bbox;
                   const sx = overlayW / 1000;
                   const sy = overlayH / 1000;
-                  const x0 = bx0 * sx, y0 = by0 * sy, x1 = bx1 * sx, y1 = by1 * sy;
+                  const x0 = bx0 * sx,
+                    y0 = by0 * sy,
+                    x1 = bx1 * sx,
+                    y1 = by1 * sy;
                   const isActive = activeIndex === globalIdx;
                   const c = typeColor(block.type);
                   const labelW = Math.round(overlayW * 0.02);
                   const labelH = Math.round(overlayH * 0.02);
                   const fs = Math.round(Math.min(overlayW, overlayH) * 0.012);
                   return (
-                    <g key={globalIdx} style={{ cursor: "pointer", pointerEvents: "all" }}
-                      onMouseEnter={() => onHover(globalIdx)} onMouseLeave={() => onHover(null)}
+                    <g
+                      key={globalIdx}
+                      style={{ cursor: "pointer", pointerEvents: "all" }}
+                      onMouseEnter={() => onHover(globalIdx)}
+                      onMouseLeave={() => onHover(null)}
                       onClick={() => onClick(globalIdx)}
                     >
-                      <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0}
+                      <rect
+                        x={x0}
+                        y={y0}
+                        width={x1 - x0}
+                        height={y1 - y0}
                         fill={isActive ? `${c}33` : "transparent"}
-                        stroke={c} strokeWidth={isActive ? 3 : 1.5} strokeOpacity={isActive ? 1 : 0.5} rx={2}
+                        stroke={c}
+                        strokeWidth={isActive ? 3 : 1.5}
+                        strokeOpacity={isActive ? 1 : 0.5}
+                        rx={2}
                       />
-                      <rect x={x0} y={Math.max(0, y0 - labelH)} width={labelW} height={labelH} fill={c} rx={3} />
-                      <text x={x0 + labelW / 2} y={Math.max(0, y0 - labelH) + labelH / 2}
-                        fill="white" fontSize={fs} fontWeight="bold" textAnchor="middle" dominantBaseline="central"
-                      >{globalIdx + 1}</text>
+                      <rect
+                        x={x0}
+                        y={Math.max(0, y0 - labelH)}
+                        width={labelW}
+                        height={labelH}
+                        fill={c}
+                        rx={3}
+                      />
+                      <text
+                        x={x0 + labelW / 2}
+                        y={Math.max(0, y0 - labelH) + labelH / 2}
+                        fill="white"
+                        fontSize={fs}
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                      >
+                        {globalIdx + 1}
+                      </text>
                     </g>
                   );
                 })}
@@ -358,9 +523,17 @@ interface RenderedViewProps {
   editing: boolean;
   editMd: string;
   onEditMdChange: (md: string) => void;
+  searchQuery?: string;
 }
 
-function RenderedView({ blocks, resultMd, editing, editMd, onEditMdChange }: RenderedViewProps) {
+function RenderedView({
+  blocks,
+  resultMd,
+  editing,
+  editMd,
+  onEditMdChange,
+  searchQuery,
+}: RenderedViewProps) {
   if (editing) {
     return (
       <Textarea
@@ -377,9 +550,12 @@ function RenderedView({ blocks, resultMd, editing, editMd, onEditMdChange }: Ren
   }
 
   if (resultMd) {
+    const displayMd = searchQuery ? highlightMarkdown(resultMd, searchQuery) : resultMd;
     return (
       <article className="rendered-md max-w-none prose-container">
-        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{resultMd}</Markdown>
+        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+          {displayMd}
+        </Markdown>
       </article>
     );
   }
@@ -390,17 +566,29 @@ function RenderedView({ blocks, resultMd, editing, editMd, onEditMdChange }: Ren
         if (block.type === "image") {
           return block.img_url ? (
             <figure key={i} className="my-4">
-              <img src={block.img_url} alt={block.img_path || "extracted image"} className="max-w-full h-auto rounded-lg" />
+              <img
+                src={block.img_url}
+                alt={block.img_path || "extracted image"}
+                className="max-w-full h-auto rounded-lg"
+              />
             </figure>
           ) : null;
         }
         if (block.type === "table" && block.table_body) {
-          return <div key={i} className="overflow-x-auto my-4" dangerouslySetInnerHTML={{ __html: block.table_body }} />;
+          return (
+            <div
+              key={i}
+              className="overflow-x-auto my-4"
+              dangerouslySetInnerHTML={{ __html: block.table_body }}
+            />
+          );
         }
         if (block.type === "list" && block.list_items) {
           return (
             <ul key={i} className="list-disc pl-6 space-y-1 my-3">
-              {block.list_items.map((item, li) => <li key={li}>{item}</li>)}
+              {block.list_items.map((item, li) => (
+                <li key={li}>{item}</li>
+              ))}
             </ul>
           );
         }
@@ -424,9 +612,19 @@ interface BlockViewProps {
   editing: boolean;
   editBlocks: ContentBlock[];
   onEditBlock: (index: number, text: string) => void;
+  searchQuery?: string;
 }
 
-function BlockView({ blocks, activeBlock, blockRefs, onBlockHover, editing, editBlocks, onEditBlock }: BlockViewProps) {
+function BlockView({
+  blocks,
+  activeBlock,
+  blockRefs,
+  onBlockHover,
+  editing,
+  editBlocks,
+  onEditBlock,
+  searchQuery,
+}: BlockViewProps) {
   const displayBlocks = editing ? editBlocks : blocks;
 
   if (displayBlocks.length === 0) {
@@ -438,12 +636,14 @@ function BlockView({ blocks, activeBlock, blockRefs, onBlockHover, editing, edit
       {displayBlocks.map((block, i) => (
         <div
           key={i}
-          ref={(el) => { if (el) blockRefs.current.set(i, el); }}
+          ref={(el) => {
+            if (el) blockRefs.current.set(i, el);
+          }}
           className={cn(
             "px-4 py-3 rounded-lg border transition-all",
             activeBlock === i
               ? "bg-primary/5 border-primary/40 shadow-sm"
-              : "border-transparent hover:bg-muted/50"
+              : "border-transparent hover:bg-muted/50",
           )}
           onMouseEnter={() => onBlockHover(i)}
           onMouseLeave={() => onBlockHover(null)}
@@ -452,12 +652,18 @@ function BlockView({ blocks, activeBlock, blockRefs, onBlockHover, editing, edit
             <span
               className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-white shrink-0"
               style={{ background: typeColor(block.type) }}
-            >{i + 1}</span>
-            <Badge variant="secondary" className={cn(
-              "text-[10px] font-semibold uppercase px-1.5 py-0",
-              `block-type-${block.type}`
-            )}>
-              {block.type}{block.text_level ? ` h${block.text_level}` : ""}
+            >
+              {i + 1}
+            </span>
+            <Badge
+              variant="secondary"
+              className={cn(
+                "text-[10px] font-semibold uppercase px-1.5 py-0",
+                `block-type-${block.type}`,
+              )}
+            >
+              {block.type}
+              {block.text_level ? ` h${block.text_level}` : ""}
             </Badge>
             {!editing && (block.text || block.list_items) && (
               <span className="ml-auto">
@@ -467,7 +673,11 @@ function BlockView({ blocks, activeBlock, blockRefs, onBlockHover, editing, edit
           </div>
 
           <div className="text-sm leading-relaxed pl-7">
-            {editing && (block.type === "text" || block.type === "title" || block.type === "formula" || block.type === "interline_equation") ? (
+            {editing &&
+            (block.type === "text" ||
+              block.type === "title" ||
+              block.type === "formula" ||
+              block.type === "interline_equation") ? (
               <Textarea
                 value={block.text || ""}
                 onChange={(e) => onEditBlock(i, e.target.value)}
@@ -485,17 +695,35 @@ function BlockView({ blocks, activeBlock, blockRefs, onBlockHover, editing, edit
               <div className="rendered-md">
                 {block.type === "image" ? (
                   block.img_url ? (
-                    <img src={block.img_url} alt={block.img_path || "extracted image"}
-                      className="max-w-full h-auto rounded" />
-                  ) : <em className="text-muted-foreground">(image region)</em>
+                    <img
+                      src={block.img_url}
+                      alt={block.img_path || "extracted image"}
+                      className="max-w-full h-auto rounded"
+                    />
+                  ) : (
+                    <em className="text-muted-foreground">(image region)</em>
+                  )
                 ) : block.type === "table" && block.table_body ? (
-                  <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: block.table_body }} />
+                  <div
+                    className="overflow-x-auto"
+                    dangerouslySetInnerHTML={{ __html: block.table_body }}
+                  />
                 ) : block.type === "list" && block.list_items ? (
                   <ul className="list-disc pl-5 space-y-1">
-                    {block.list_items.map((item, li) => <li key={li}>{item}</li>)}
+                    {block.list_items.map((item, li) => (
+                      <li key={li}>
+                        {searchQuery ? <HighlightText text={item} query={searchQuery} /> : item}
+                      </li>
+                    ))}
                   </ul>
+                ) : searchQuery && block.text ? (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                    <HighlightText text={block.text} query={searchQuery} />
+                  </p>
                 ) : (
-                  <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{block.text || ""}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                    {block.text || ""}
+                  </Markdown>
                 )}
               </div>
             )}
@@ -508,7 +736,10 @@ function BlockView({ blocks, activeBlock, blockRefs, onBlockHover, editing, edit
 
 // ---- Status config ----
 
-const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
+> = {
   pending: { label: "Pending", variant: "secondary" },
   processing: { label: "Processing", variant: "outline" },
   completed: { label: "Completed", variant: "default" },
@@ -548,6 +779,15 @@ export default function TaskDetail() {
   // File version key to force reload after server-side rotation
   const [fileVersion, setFileVersion] = useState(0);
 
+  // In-document search
+  const [docSearch, setDocSearch] = useState("");
+  const [docSearchOpen, setDocSearchOpen] = useState(false);
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
+  const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const debouncedDocSearch = useDebounce(docSearch, 200);
+
   // ---- Polling ----
 
   useEffect(() => {
@@ -565,41 +805,107 @@ export default function TaskDetail() {
       }
     };
     poll();
-    return () => { cancelled = true; clearTimeout(timer); };
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [id]);
 
   const blocks = (task?.content_list || []).filter((b) => b.type !== "discarded");
+
+  // Keyboard shortcut: Ctrl/Cmd+F opens in-document search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f" && task?.status === "completed") {
+        e.preventDefault();
+        setDocSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+      if (e.key === "Escape" && docSearchOpen) {
+        setDocSearchOpen(false);
+        setDocSearch("");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [docSearchOpen, task?.status]);
+
+  // Focus search input when opened
+  useEffect(() => {
+    if (docSearchOpen) setTimeout(() => searchInputRef.current?.focus(), 50);
+  }, [docSearchOpen]);
+
+  // Reset match index when search query changes
+  useEffect(() => {
+    setSearchMatchIndex(0);
+    setSearchMatchCount(0);
+  }, [debouncedDocSearch]);
+
+  // Navigate marks after render: count, style active, scroll into view
+  useEffect(() => {
+    if (!rightPanelRef.current || !debouncedDocSearch) {
+      setSearchMatchCount(0);
+      return;
+    }
+    const t = setTimeout(() => {
+      if (!rightPanelRef.current) return;
+      const marks = Array.from(
+        rightPanelRef.current.querySelectorAll<HTMLElement>("mark.search-highlight"),
+      );
+      const count = marks.length;
+      setSearchMatchCount(count);
+      if (count === 0) return;
+      const idx = searchMatchIndex % count;
+      marks.forEach((m, i) => {
+        m.style.background = i === idx ? "#ea580c" : "#fde047";
+        m.style.color = i === idx ? "#fff" : "inherit";
+      });
+      marks[idx]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [debouncedDocSearch, searchMatchIndex, task?.result_md, viewMode]);
 
   const scrollToBlock = useCallback((i: number) => {
     blockRefs.current.get(i)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
-  const goToBlock = useCallback((i: number) => {
-    setActiveBlock(i);
-    setViewMode("blocks");
-    scrollToBlock(i);
-    const pageIdx = blocks[i]?.page_idx ?? 0;
-    setPdfPage(pageIdx + 1);
-  }, [scrollToBlock, blocks]);
-
-  const handleHover = useCallback((i: number | null) => {
-    setActiveBlock(i);
-    if (i !== null && viewMode === "blocks") scrollToBlock(i);
-  }, [scrollToBlock, viewMode]);
-
-  const handleBlockHover = useCallback((i: number | null) => {
-    setActiveBlock(i);
-    if (i !== null) {
+  const goToBlock = useCallback(
+    (i: number) => {
+      setActiveBlock(i);
+      setViewMode("blocks");
+      scrollToBlock(i);
       const pageIdx = blocks[i]?.page_idx ?? 0;
       setPdfPage(pageIdx + 1);
-    }
-  }, [blocks]);
+    },
+    [scrollToBlock, blocks],
+  );
+
+  const handleHover = useCallback(
+    (i: number | null) => {
+      setActiveBlock(i);
+      if (i !== null && viewMode === "blocks") scrollToBlock(i);
+    },
+    [scrollToBlock, viewMode],
+  );
+
+  const handleBlockHover = useCallback(
+    (i: number | null) => {
+      setActiveBlock(i);
+      if (i !== null) {
+        const pageIdx = blocks[i]?.page_idx ?? 0;
+        setPdfPage(pageIdx + 1);
+      }
+    },
+    [blocks],
+  );
 
   // ---- Edit handlers ----
 
   const startEditing = () => {
     setEditMd(task?.result_md || "");
-    setEditBlocks(blocks.map((b) => ({ ...b, list_items: b.list_items ? [...b.list_items] : undefined })));
+    setEditBlocks(
+      blocks.map((b) => ({ ...b, list_items: b.list_items ? [...b.list_items] : undefined })),
+    );
     setEditing(true);
   };
 
@@ -752,20 +1058,22 @@ export default function TaskDetail() {
 
   // ---- Render ----
 
-  if (error) return (
-    <div className="p-6">
-      <Alert variant="destructive">
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    </div>
-  );
+  if (error)
+    return (
+      <div className="p-6">
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
 
-  if (!task) return (
-    <div className="flex items-center justify-center h-[calc(100vh-3.5rem)] text-muted-foreground gap-2">
-      <Loader2 className="h-5 w-5 animate-spin" />
-      Loading...
-    </div>
-  );
+  if (!task)
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-3.5rem)] text-muted-foreground gap-2">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        Loading...
+      </div>
+    );
 
   const isProcessing = task.status === "pending" || task.status === "processing";
   const isImage = /\.(png|jpe?g|gif|bmp|tiff)$/i.test(task.filename);
@@ -794,7 +1102,7 @@ export default function TaskDetail() {
             className={cn(
               "shrink-0",
               task.status === "processing" && "border-warning text-warning",
-              task.status === "completed" && "border-success text-success bg-success/10"
+              task.status === "completed" && "border-success text-success bg-success/10",
             )}
           >
             {status.label}
@@ -811,7 +1119,8 @@ export default function TaskDetail() {
         <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5">
           <Button
             variant={viewMode === "document" ? "default" : "ghost"}
-            size="sm" className="h-7 px-2.5 gap-1.5 text-xs"
+            size="sm"
+            className="h-7 px-2.5 gap-1.5 text-xs"
             onClick={() => setViewMode("document")}
           >
             <FileText className="h-3.5 w-3.5" />
@@ -819,7 +1128,8 @@ export default function TaskDetail() {
           </Button>
           <Button
             variant={viewMode === "blocks" ? "default" : "ghost"}
-            size="sm" className="h-7 px-2.5 gap-1.5 text-xs"
+            size="sm"
+            className="h-7 px-2.5 gap-1.5 text-xs"
             onClick={() => setViewMode("blocks")}
           >
             <LayoutList className="h-3.5 w-3.5" />
@@ -831,7 +1141,12 @@ export default function TaskDetail() {
 
         {/* Edit / Save / Cancel */}
         {task.status === "completed" && !editing && (
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={startEditing}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={startEditing}
+          >
             <Pencil className="h-3.5 w-3.5" />
             Edit
           </Button>
@@ -839,13 +1154,25 @@ export default function TaskDetail() {
         {editing && (
           <>
             <Button
-              variant="default" size="sm" className="h-7 gap-1.5 text-xs"
-              onClick={saveEdits} disabled={saving}
+              variant="default"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={saveEdits}
+              disabled={saving}
             >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
               Save
             </Button>
-            <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={cancelEditing}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={cancelEditing}
+            >
               <X className="h-3.5 w-3.5" />
               Cancel
             </Button>
@@ -855,25 +1182,126 @@ export default function TaskDetail() {
         {/* Re-OCR (full) */}
         {task.status === "completed" && !editing && (
           <Button
-            variant="outline" size="sm" className="h-7 gap-1.5 text-xs"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
             onClick={() => setReprocessDialogOpen(true)}
             disabled={rotating}
           >
-            {rotating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {rotating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
             Re-OCR
+          </Button>
+        )}
+
+        {/* In-document search toggle */}
+        {task.status === "completed" && !editing && (
+          <Button
+            variant={docSearchOpen ? "default" : "ghost"}
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            onClick={() => {
+              setDocSearchOpen((v) => !v);
+              if (docSearchOpen) setDocSearch("");
+            }}
+          >
+            <Search className="h-4 w-4" />
           </Button>
         )}
 
         {/* Toggle document panel */}
         <Button
-          variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground"
           onClick={() => setDocPanelOpen(!docPanelOpen)}
         >
-          {docPanelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+          {docPanelOpen ? (
+            <PanelLeftClose className="h-4 w-4" />
+          ) : (
+            <PanelLeft className="h-4 w-4" />
+          )}
         </Button>
 
         {!editing && <CopyButton text={task.result_md || ""} label="Copy MD" />}
       </div>
+
+      {/* In-document search bar */}
+      {docSearchOpen && task.status === "completed" && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b bg-muted/30 shrink-0">
+          <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="在文档中搜索…"
+            value={docSearch}
+            onChange={(e) => setDocSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (e.shiftKey) {
+                  setSearchMatchIndex((i) =>
+                    searchMatchCount > 0 ? (i - 1 + searchMatchCount) % searchMatchCount : 0,
+                  );
+                } else {
+                  setSearchMatchIndex((i) =>
+                    searchMatchCount > 0 ? (i + 1) % searchMatchCount : 0,
+                  );
+                }
+              }
+              if (e.key === "Escape") {
+                setDocSearchOpen(false);
+                setDocSearch("");
+              }
+            }}
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {debouncedDocSearch && (
+            <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+              {searchMatchCount > 0
+                ? `${(searchMatchIndex % searchMatchCount) + 1} / ${searchMatchCount}`
+                : "无匹配"}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0"
+            disabled={searchMatchCount === 0}
+            onClick={() =>
+              setSearchMatchIndex((i) =>
+                searchMatchCount > 0 ? (i - 1 + searchMatchCount) % searchMatchCount : 0,
+              )
+            }
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0"
+            disabled={searchMatchCount === 0}
+            onClick={() =>
+              setSearchMatchIndex((i) => (searchMatchCount > 0 ? (i + 1) % searchMatchCount : 0))
+            }
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0"
+            onClick={() => {
+              setDocSearchOpen(false);
+              setDocSearch("");
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
 
       {/* Processing / error states */}
       {isProcessing && rotatingPageNums.length === 0 && (
@@ -904,8 +1332,11 @@ export default function TaskDetail() {
                       <Tooltip>
                         <TooltipTrigger>
                           <Button
-                            variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-                            onClick={handleRotateImage} disabled={rotating}
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            onClick={handleRotateImage}
+                            disabled={rotating}
                           >
                             <RotateCw className="h-4 w-4" />
                           </Button>
@@ -915,15 +1346,21 @@ export default function TaskDetail() {
 
                       {imageRotation > 0 && (
                         <>
-                          <Badge variant="outline" className="text-[11px] h-6 gap-1">{imageRotation}°</Badge>
+                          <Badge variant="outline" className="text-[11px] h-6 gap-1">
+                            {imageRotation}°
+                          </Badge>
                           <Button
-                            variant="default" size="sm" className="h-7 px-2.5 gap-1 text-xs"
-                            onClick={confirmRotateImage} disabled={rotating}
+                            variant="default"
+                            size="sm"
+                            className="h-7 px-2.5 gap-1 text-xs"
+                            onClick={confirmRotateImage}
+                            disabled={rotating}
                           >
-                            {rotating
-                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              : <CheckCircle className="h-3.5 w-3.5" />
-                            }
+                            {rotating ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <CheckCircle className="h-3.5 w-3.5" />
+                            )}
                             Re-OCR
                           </Button>
                         </>
@@ -933,7 +1370,11 @@ export default function TaskDetail() {
                       <Tooltip>
                         <TooltipTrigger>
                           <a href={fileSrc} target="_blank" rel="noreferrer">
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground"
+                            >
                               <Download className="h-4 w-4" />
                             </Button>
                           </a>
@@ -944,17 +1385,29 @@ export default function TaskDetail() {
                   )}
                   <div className="flex-1 overflow-auto relative bg-muted/30">
                     {isImage ? (
-                      <ImageOverlay src={fileSrc} blocks={blocks}
-                        activeIndex={activeBlock} onHover={handleHover} onClick={goToBlock}
+                      <ImageOverlay
+                        src={fileSrc}
+                        blocks={blocks}
+                        activeIndex={activeBlock}
+                        onHover={handleHover}
+                        onClick={goToBlock}
                         rotation={imageRotation}
                       />
                     ) : isPdf ? (
-                      <PdfViewer src={fileSrc} blocks={blocks}
-                        activeIndex={activeBlock} onHover={handleHover} onClick={goToBlock}
-                        pageWidths={pageWidths} pageHeights={pageHeights}
-                        currentPage={pdfPage} onPageChange={setPdfPage}
+                      <PdfViewer
+                        src={fileSrc}
+                        blocks={blocks}
+                        activeIndex={activeBlock}
+                        onHover={handleHover}
+                        onClick={goToBlock}
+                        pageWidths={pageWidths}
+                        pageHeights={pageHeights}
+                        currentPage={pdfPage}
+                        onPageChange={setPdfPage}
                         pageRotation={currentPageRotation}
-                        totalRotatedPages={Object.values(pageRotations).filter((a) => a !== 0).length}
+                        totalRotatedPages={
+                          Object.values(pageRotations).filter((a) => a !== 0).length
+                        }
                         onRotate={handleRotatePdfPage}
                         onConfirmRotate={confirmRotatePdfPage}
                         rotating={rotating}
@@ -962,7 +1415,12 @@ export default function TaskDetail() {
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                        <a href={fileSrc} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                        <a
+                          href={fileSrc}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline"
+                        >
                           Download file
                         </a>
                       </div>
@@ -972,21 +1430,32 @@ export default function TaskDetail() {
               </Allotment.Pane>
 
               <Allotment.Pane minSize={300}>
-                <div className="h-full overflow-auto">
-                  <div className={cn(
-                    "mx-auto",
-                    viewMode === "document" ? "max-w-3xl px-8 py-6" : "max-w-4xl px-4 py-3"
-                  )}>
+                <div ref={rightPanelRef} className="h-full overflow-auto">
+                  <div
+                    className={cn(
+                      "mx-auto",
+                      viewMode === "document" ? "max-w-3xl px-8 py-6" : "max-w-4xl px-4 py-3",
+                    )}
+                  >
                     {viewMode === "document" ? (
                       <RenderedView
-                        blocks={blocks} resultMd={task.result_md}
-                        editing={editing} editMd={editMd} onEditMdChange={setEditMd}
+                        blocks={blocks}
+                        resultMd={task.result_md}
+                        editing={editing}
+                        editMd={editMd}
+                        onEditMdChange={setEditMd}
+                        searchQuery={debouncedDocSearch || undefined}
                       />
                     ) : (
                       <BlockView
-                        blocks={blocks} activeBlock={activeBlock} blockRefs={blockRefs}
+                        blocks={blocks}
+                        activeBlock={activeBlock}
+                        blockRefs={blockRefs}
                         onBlockHover={handleBlockHover}
-                        editing={editing} editBlocks={editBlocks} onEditBlock={handleEditBlock}
+                        editing={editing}
+                        editBlocks={editBlocks}
+                        onEditBlock={handleEditBlock}
+                        searchQuery={debouncedDocSearch || undefined}
                       />
                     )}
                   </div>
@@ -994,21 +1463,32 @@ export default function TaskDetail() {
               </Allotment.Pane>
             </Allotment>
           ) : (
-            <div className="h-full overflow-auto">
-              <div className={cn(
-                "mx-auto",
-                viewMode === "document" ? "max-w-3xl px-8 py-6" : "max-w-4xl px-4 py-3"
-              )}>
+            <div ref={rightPanelRef} className="h-full overflow-auto">
+              <div
+                className={cn(
+                  "mx-auto",
+                  viewMode === "document" ? "max-w-3xl px-8 py-6" : "max-w-4xl px-4 py-3",
+                )}
+              >
                 {viewMode === "document" ? (
                   <RenderedView
-                    blocks={blocks} resultMd={task.result_md}
-                    editing={editing} editMd={editMd} onEditMdChange={setEditMd}
+                    blocks={blocks}
+                    resultMd={task.result_md}
+                    editing={editing}
+                    editMd={editMd}
+                    onEditMdChange={setEditMd}
+                    searchQuery={debouncedDocSearch || undefined}
                   />
                 ) : (
                   <BlockView
-                    blocks={blocks} activeBlock={activeBlock} blockRefs={blockRefs}
+                    blocks={blocks}
+                    activeBlock={activeBlock}
+                    blockRefs={blockRefs}
                     onBlockHover={handleBlockHover}
-                    editing={editing} editBlocks={editBlocks} onEditBlock={handleEditBlock}
+                    editing={editing}
+                    editBlocks={editBlocks}
+                    onEditBlock={handleEditBlock}
+                    searchQuery={debouncedDocSearch || undefined}
                   />
                 )}
               </div>
@@ -1023,11 +1503,14 @@ export default function TaskDetail() {
           <DialogHeader>
             <DialogTitle>Re-run OCR</DialogTitle>
             <DialogDescription>
-              This will re-process the entire document. The current recognized content will be replaced with new results.
+              This will re-process the entire document. The current recognized content will be
+              replaced with new results.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReprocessDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setReprocessDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleReprocess}>Confirm</Button>
           </DialogFooter>
         </DialogContent>

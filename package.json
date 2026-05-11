@@ -7,10 +7,16 @@
     "dev:web": "cd packages/web && bunx vite",
     "dev": "bun run dev:server & bun run dev:web",
     "build:web": "cd packages/web && bunx vite build",
-    "build": "bun run build:web"
+    "build": "bun run build:web",
+    "typecheck": "cd packages/server && tsc --noEmit && cd ../web && tsc -b",
+    "test": "bun test --cwd packages/server && bun test --cwd packages/web",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@biomejs/biome": "^2.4.15",
+    "lefthook": "^2.1.6"
   },
   "peerDependencies": {
     "typescript": "^5"

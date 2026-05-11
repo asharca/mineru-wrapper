@@ -37,3 +37,11 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 data/
 uploads/
 *.db
+
+# demo files
+demo.pdf
+demo.png
+demo.png_files/
+
+# IDE
+.vscode/

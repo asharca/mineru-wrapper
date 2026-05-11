@@ -1,0 +1,10 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{ts,tsx}"
+      run: bunx biome check --write {staged_files}
+    typecheck:
+      run: bun run typecheck
+    test:
+      run: bun test

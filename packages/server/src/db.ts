@@ -24,18 +24,30 @@ db.exec(`
     error TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT,
-    file_size INTEGER NOT NULL DEFAULT 0
+    file_size INTEGER NOT NULL DEFAULT 0,
+    user_id TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source);
 `);
 
 // Migrations
-for (const col of ["content_list TEXT", "pages TEXT", "file_hash TEXT", "progress TEXT"]) {
-  try { db.exec(`ALTER TABLE tasks ADD COLUMN ${col}`); } catch { /* exists */ }
+for (const col of [
+  "content_list TEXT",
+  "pages TEXT",
+  "file_hash TEXT",
+  "progress TEXT",
+  "user_id TEXT",
+]) {
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN ${col}`);
+  } catch {
+    /* exists */
+  }
 }
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_file_hash ON tasks(file_hash)`);
-
+db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks(user_id, created_at DESC)`);
 
 export interface ContentBlock {
   type: string;
@@ -66,60 +78,71 @@ export interface OcrTask {
   completed_at: string | null;
   file_size: number;
   file_hash: string | null;
+  user_id: string | null;
 }
 
 export const stmt = {
   insert: db.prepare(
-    `INSERT INTO tasks (id, filename, original_name, status, source, backend, lang, file_size, file_hash)
-     VALUES ($id, $filename, $original_name, $status, $source, $backend, $lang, $file_size, $file_hash)`
+    `INSERT INTO tasks (id, filename, original_name, status, source, backend, lang, file_size, file_hash, user_id)
+     VALUES ($id, $filename, $original_name, $status, $source, $backend, $lang, $file_size, $file_hash, $user_id)`,
   ),
   insertCached: db.prepare(
-    `INSERT INTO tasks (id, filename, original_name, status, source, backend, lang, file_size, file_hash, result_md, content_list, pages, completed_at)
-     VALUES ($id, $filename, $original_name, 'completed', $source, $backend, $lang, $file_size, $file_hash, $result_md, $content_list, $pages, datetime('now'))`
+    `INSERT INTO tasks (id, filename, original_name, status, source, backend, lang, file_size, file_hash, result_md, content_list, pages, completed_at, user_id)
+     VALUES ($id, $filename, $original_name, 'completed', $source, $backend, $lang, $file_size, $file_hash, $result_md, $content_list, $pages, datetime('now'), $user_id)`,
   ),
   findByHash: db.prepare(
-    `SELECT * FROM tasks WHERE file_hash = ?1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`
+    `SELECT * FROM tasks WHERE file_hash = ?1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`,
   ),
   setResult: db.prepare(
-    `UPDATE tasks SET status='completed', result_md=$result_md, content_list=$content_list, pages=$pages, completed_at=datetime('now') WHERE id=$id`
+    `UPDATE tasks SET status='completed', result_md=$result_md, content_list=$content_list, pages=$pages, completed_at=datetime('now') WHERE id=$id`,
   ),
   updateContent: db.prepare(
-    `UPDATE tasks SET result_md=$result_md, content_list=$content_list WHERE id=$id`
+    `UPDATE tasks SET result_md=$result_md, content_list=$content_list WHERE id=$id AND (user_id = $user_id OR user_id IS NULL)`,
   ),
   setError: db.prepare(
-    `UPDATE tasks SET status='failed', error=$error, completed_at=datetime('now') WHERE id=$id`
+    `UPDATE tasks SET status='failed', error=$error, completed_at=datetime('now') WHERE id=$id`,
   ),
   setProgress: db.prepare(`UPDATE tasks SET progress=$progress WHERE id=$id`),
   setStatus: db.prepare(`UPDATE tasks SET status=$status WHERE id=$id`),
-  getById: db.prepare(`SELECT * FROM tasks WHERE id=?1`),
+  getById: db.prepare(`SELECT * FROM tasks WHERE id=?1 AND (user_id = ?2 OR user_id IS NULL)`),
   list: db.prepare(
     `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
             created_at, completed_at, file_size
-     FROM tasks ORDER BY created_at DESC LIMIT ?1 OFFSET ?2`
+     FROM tasks WHERE user_id = ?1 OR user_id IS NULL ORDER BY created_at DESC LIMIT ?2 OFFSET ?3`,
   ),
   listBySource: db.prepare(
     `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
             created_at, completed_at, file_size
-     FROM tasks WHERE source=?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3`
+     FROM tasks WHERE source=?1 AND (user_id = ?2 OR user_id IS NULL) ORDER BY created_at DESC LIMIT ?3 OFFSET ?4`,
   ),
-  count: db.prepare(`SELECT COUNT(*) as total FROM tasks`),
-  countBySource: db.prepare(`SELECT COUNT(*) as total FROM tasks WHERE source=?1`),
-  countSearch: db.prepare(`SELECT COUNT(*) as total FROM tasks WHERE original_name LIKE ?1`),
-  countBySourceSearch: db.prepare(`SELECT COUNT(*) as total FROM tasks WHERE source=?1 AND original_name LIKE ?2`),
+  count: db.prepare(`SELECT COUNT(*) as total FROM tasks WHERE user_id = ?1 OR user_id IS NULL`),
+  countBySource: db.prepare(
+    `SELECT COUNT(*) as total FROM tasks WHERE source=?1 AND (user_id = ?2 OR user_id IS NULL)`,
+  ),
+  countSearch: db.prepare(
+    `SELECT COUNT(*) as total FROM tasks WHERE (user_id = ?1 OR user_id IS NULL) AND (original_name LIKE ?2 OR result_md LIKE ?2)`,
+  ),
+  countBySourceSearch: db.prepare(
+    `SELECT COUNT(*) as total FROM tasks WHERE source=?1 AND (user_id = ?2 OR user_id IS NULL) AND (original_name LIKE ?3 OR result_md LIKE ?3)`,
+  ),
   listSearch: db.prepare(
     `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
-            created_at, completed_at, file_size
-     FROM tasks WHERE original_name LIKE ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3`
+            created_at, completed_at, file_size, result_md
+     FROM tasks WHERE (user_id = ?1 OR user_id IS NULL) AND (original_name LIKE ?2 OR result_md LIKE ?2) ORDER BY created_at DESC LIMIT ?3 OFFSET ?4`,
   ),
   listBySourceSearch: db.prepare(
     `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
-            created_at, completed_at, file_size
-     FROM tasks WHERE source=?1 AND original_name LIKE ?2 ORDER BY created_at DESC LIMIT ?3 OFFSET ?4`
+            created_at, completed_at, file_size, result_md
+     FROM tasks WHERE source=?1 AND (user_id = ?2 OR user_id IS NULL) AND (original_name LIKE ?3 OR result_md LIKE ?3) ORDER BY created_at DESC LIMIT ?4 OFFSET ?5`,
   ),
-  deleteById: db.prepare(`DELETE FROM tasks WHERE id=?1`),
-  deleteByIds: (ids: string[]) => {
-    const placeholders = ids.map((_, i) => `?${i + 1}`).join(",");
-    return db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...ids);
+  deleteById: db.prepare(`DELETE FROM tasks WHERE id=?1 AND (user_id = ?2 OR user_id IS NULL)`),
+  deleteByIds: (ids: string[], userId: string) => {
+    const placeholders = ids.map((_, i) => `?${i + 2}`).join(",");
+    return db
+      .prepare(
+        `DELETE FROM tasks WHERE id IN (${placeholders}) AND (user_id = ?1 OR user_id IS NULL)`,
+      )
+      .run(userId, ...ids);
   },
 };
 

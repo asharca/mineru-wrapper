@@ -1,9 +1,9 @@
-import { useState, useCallback } from "react";
+import { FileUp, Loader2, RotateCcw, Upload } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
-import { Upload, Loader2, FileUp, RotateCcw } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uploadFile } from "../api.ts";
 import { loadSettings } from "../settings.ts";
@@ -37,7 +37,7 @@ export default function UploadPage() {
         setUploading(false);
       }
     },
-    [navigate, autoRotate]
+    [navigate, autoRotate],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -116,7 +116,10 @@ export default function UploadPage() {
           checked={autoRotate}
           onCheckedChange={(v) => setAutoRotate(Boolean(v))}
         />
-        <label htmlFor="upload-auto-rotate" className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none">
+        <label
+          htmlFor="upload-auto-rotate"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none"
+        >
           <RotateCcw className="h-3.5 w-3.5" />
           Auto rotate document
         </label>

@@ -8,6 +8,7 @@ services:
       - PADDLEOCR_URL=http://paddleocr:8000
       - DB_PATH=/app/data/ocr.db
       - PORT=3001
+      - BETTER_AUTH_URL=http://localhost:3002
     volumes:
       - ocr-data:/app/data
       - ocr-uploads:/app/uploads
