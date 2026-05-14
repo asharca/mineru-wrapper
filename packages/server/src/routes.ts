@@ -50,19 +50,6 @@ function getUserId(c: { get: (key: string) => unknown }): string | null {
 
 // -- helpers --
 
-function extractSnippet(text: string | null, query: string): string | null {
-  if (!text || !query) return null;
-  const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return null;
-  const start = Math.max(0, idx - 60);
-  const end = Math.min(text.length, idx + query.length + 90);
-  return (
-    (start > 0 ? "…" : "") +
-    text.slice(start, end).replace(/\n+/g, " ") +
-    (end < text.length ? "…" : "")
-  );
-}
-
 async function readUploadFile(
   file: File,
 ): Promise<{ buf: ArrayBuffer; hash: string; ext: string }> {
@@ -707,7 +694,9 @@ app.openapi(listTasksRoute, (c) => {
   const offset = (page - 1) * limit;
   const source = c.req.query("source");
   const search = c.req.query("search");
-  const searchPattern = search ? `%${search}%` : null;
+  // FTS5: append * for prefix matching so partial words like "doc" match "document".
+  // Strip non-alphanumeric (preserving CJK) to avoid FTS5 syntax errors from punctuation.
+  const searchPattern = search ? `${search.replace(/[^a-zA-Z0-9一-鿿\s]/g, " ").trim()}*` : null;
   const userId = getUserId(c);
 
   let tasks: OcrTask[];
@@ -738,7 +727,9 @@ app.openapi(listTasksRoute, (c) => {
     }
   }
 
-  const taskItems = (tasks as (OcrTask & { result_md?: string | null })[]).map((task) => ({
+  const taskItems = (
+    tasks as (OcrTask & { result_md?: string | null; fts_snippet?: string | null })[]
+  ).map((task) => ({
     id: task.id,
     filename: task.filename,
     original_name: task.original_name,
@@ -751,7 +742,7 @@ app.openapi(listTasksRoute, (c) => {
     created_at: task.created_at,
     completed_at: task.completed_at,
     file_size: task.file_size,
-    snippet: searchPattern && task.result_md ? extractSnippet(task.result_md, search!) : null,
+    snippet: searchPattern ? (task.fts_snippet ?? null) : null,
   }));
 
   return c.json({

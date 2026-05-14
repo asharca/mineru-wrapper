@@ -70,6 +70,42 @@ runMigration(
   "CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks(user_id, created_at DESC)",
 );
 
+runMigration(
+  "fts5_tasks",
+  `CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+     task_id UNINDEXED,
+     original_name,
+     result_md,
+     tokenize = 'unicode61'
+   )`,
+);
+runMigration(
+  "fts5_populate",
+  `INSERT INTO tasks_fts(task_id, original_name, result_md)
+   SELECT id, original_name, result_md FROM tasks`,
+);
+runMigration(
+  "fts5_trigger_insert",
+  `CREATE TRIGGER IF NOT EXISTS tasks_fts_ai AFTER INSERT ON tasks BEGIN
+     INSERT INTO tasks_fts(task_id, original_name, result_md)
+       VALUES (new.id, new.original_name, new.result_md);
+   END`,
+);
+runMigration(
+  "fts5_trigger_update",
+  `CREATE TRIGGER IF NOT EXISTS tasks_fts_au AFTER UPDATE OF original_name, result_md ON tasks BEGIN
+     DELETE FROM tasks_fts WHERE task_id = old.id;
+     INSERT INTO tasks_fts(task_id, original_name, result_md)
+       VALUES (new.id, new.original_name, new.result_md);
+   END`,
+);
+runMigration(
+  "fts5_trigger_delete",
+  `CREATE TRIGGER IF NOT EXISTS tasks_fts_ad AFTER DELETE ON tasks BEGIN
+     DELETE FROM tasks_fts WHERE task_id = old.id;
+   END`,
+);
+
 export interface ContentBlock {
   type: string;
   bbox: [number, number, number, number];
@@ -141,20 +177,36 @@ export const stmt = {
     `SELECT COUNT(*) as total FROM tasks WHERE source=?1 AND (user_id = ?2 OR user_id IS NULL)`,
   ),
   countSearch: db.prepare(
-    `SELECT COUNT(*) as total FROM tasks WHERE (user_id = ?1 OR user_id IS NULL) AND (original_name LIKE ?2 OR result_md LIKE ?2)`,
+    `SELECT COUNT(*) as total
+     FROM tasks
+     WHERE (user_id = ?1 OR user_id IS NULL)
+       AND id IN (SELECT task_id FROM tasks_fts WHERE tasks_fts MATCH ?2)`,
   ),
   countBySourceSearch: db.prepare(
-    `SELECT COUNT(*) as total FROM tasks WHERE source=?1 AND (user_id = ?2 OR user_id IS NULL) AND (original_name LIKE ?3 OR result_md LIKE ?3)`,
+    `SELECT COUNT(*) as total
+     FROM tasks
+     WHERE source = ?1 AND (user_id = ?2 OR user_id IS NULL)
+       AND id IN (SELECT task_id FROM tasks_fts WHERE tasks_fts MATCH ?3)`,
   ),
   listSearch: db.prepare(
-    `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
-            created_at, completed_at, file_size, result_md
-     FROM tasks WHERE (user_id = ?1 OR user_id IS NULL) AND (original_name LIKE ?2 OR result_md LIKE ?2) ORDER BY created_at DESC LIMIT ?3 OFFSET ?4`,
+    `SELECT t.id, t.filename, t.original_name, t.status, t.source, t.backend, t.lang,
+            t.progress, t.error, t.created_at, t.completed_at, t.file_size, t.result_md,
+            snippet(tasks_fts, 2, '', '', '…', 15) as fts_snippet
+     FROM tasks t
+     JOIN tasks_fts ON tasks_fts.task_id = t.id
+     WHERE (t.user_id = ?1 OR t.user_id IS NULL)
+       AND tasks_fts MATCH ?2
+     ORDER BY t.created_at DESC LIMIT ?3 OFFSET ?4`,
   ),
   listBySourceSearch: db.prepare(
-    `SELECT id, filename, original_name, status, source, backend, lang, progress, error,
-            created_at, completed_at, file_size, result_md
-     FROM tasks WHERE source=?1 AND (user_id = ?2 OR user_id IS NULL) AND (original_name LIKE ?3 OR result_md LIKE ?3) ORDER BY created_at DESC LIMIT ?4 OFFSET ?5`,
+    `SELECT t.id, t.filename, t.original_name, t.status, t.source, t.backend, t.lang,
+            t.progress, t.error, t.created_at, t.completed_at, t.file_size, t.result_md,
+            snippet(tasks_fts, 2, '', '', '…', 15) as fts_snippet
+     FROM tasks t
+     JOIN tasks_fts ON tasks_fts.task_id = t.id
+     WHERE t.source = ?1 AND (t.user_id = ?2 OR t.user_id IS NULL)
+       AND tasks_fts MATCH ?3
+     ORDER BY t.created_at DESC LIMIT ?4 OFFSET ?5`,
   ),
   deleteById: db.prepare(`DELETE FROM tasks WHERE id=?1 AND (user_id = ?2 OR user_id IS NULL)`),
   deleteByIds: (ids: string[], userId: string) => {
