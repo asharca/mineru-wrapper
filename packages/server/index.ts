@@ -3,7 +3,7 @@ import { serveStatic } from "hono/bun";
 import { cors } from "hono/cors";
 import { auth } from "./src/auth.ts";
 import { authMiddleware } from "./src/middleware/index.ts";
-import routes from "./src/routes.ts";
+import routes from "./src/routes/index.ts";
 
 const PORT = Number(process.env.PORT) || 3001;
 
