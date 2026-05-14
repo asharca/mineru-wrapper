@@ -1,6 +1,6 @@
-import { mkdirSync, unlinkSync } from "fs";
+import { dirname, extname, join } from "node:path";
+import { mkdirSync } from "fs";
 import * as mupdf from "mupdf";
-import { dirname, extname, join } from "path";
 import { degrees, PDFDocument } from "pdf-lib";
 import sharp from "sharp";
 import { v4 as uuid } from "uuid";
@@ -10,7 +10,6 @@ const DEFAULT_MINERU_URL = process.env.MINERU_URL || "http://10.0.10.2:8001";
 const PADDLEOCR_URL = process.env.PADDLEOCR_URL || "http://localhost:8000";
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif"]);
-const OFFICE_EXTS = new Set([".xlsx", ".xls", ".docx", ".pptx"]);
 
 export interface ParseOptions {
   backend?: string;
@@ -48,8 +47,8 @@ async function detectRotationsHttp(imageBuffers: Buffer[]): Promise<number[]> {
   if (imageBuffers.length === 0) return [];
 
   const form = new FormData();
-  for (let i = 0; i < imageBuffers.length; i++) {
-    const blob = new Blob([imageBuffers[i]], { type: "image/png" });
+  for (const [i, buf] of imageBuffers.entries()) {
+    const blob = new Blob([buf], { type: "image/png" });
     form.append("files", blob, `probe_${i}.png`);
   }
 
@@ -99,7 +98,7 @@ async function autoRotateImage(filePath: string): Promise<void> {
       .toBuffer();
   }
 
-  const [angle] = await detectRotationsHttp([thumb]);
+  const [angle = 0] = await detectRotationsHttp([thumb]);
   console.log(`[auto-rotate] image -> angle=${angle}°`);
 
   // Step 3: Rotate original image if needed
@@ -157,7 +156,7 @@ async function autoRotatePdf(filePath: string): Promise<void> {
   // Step 3: Apply rotation via pdf-lib metadata (unified with manual rotate)
   const srcPdf = await PDFDocument.load(pdfBytes);
   for (let i = 0; i < numPages; i++) {
-    const angle = angles[i];
+    const angle = angles[i] ?? 0;
     if (angle !== 0) {
       const page = srcPdf.getPage(i);
       page.setRotation(degrees(angle));
@@ -248,14 +247,6 @@ export async function extractPdfPages(filePath: string, pageIndices: number[]): 
   const tmpPath = join(dirname(filePath), `_extract_${uuid()}.pdf`);
   await Bun.write(tmpPath, await newPdf.save());
   return tmpPath;
-}
-
-function cleanFile(path: string) {
-  try {
-    unlinkSync(path);
-  } catch {
-    /* ignore */
-  }
 }
 
 function buildForm(filePath: string, originalName: string, options: ParseOptions): FormData {
@@ -403,11 +394,11 @@ async function extractResults(
         const urlMap: Record<string, string> = {};
         for (const [key, dataUri] of Object.entries(images)) {
           const match = dataUri.match(/^data:image\/(\w+);base64,(.+)$/);
-          if (!match) continue;
+          if (!match?.[1] || !match[2]) continue;
           const imgExt = match[1] === "jpeg" ? "jpg" : match[1];
           const imgFilename = `${uuid()}.${imgExt}`;
           const imgPath = join(imgDir, imgFilename);
-          await Bun.write(imgPath, Buffer.from(match[2]!, "base64"));
+          await Bun.write(imgPath, Buffer.from(match[2], "base64"));
           urlMap[key] = `/files/img/${imgFilename}`;
         }
 

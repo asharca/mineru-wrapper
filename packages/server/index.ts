@@ -36,3 +36,5 @@ Bun.serve({
   port: PORT,
   fetch: app.fetch,
 });
+
+export default app;

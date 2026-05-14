@@ -1,7 +1,7 @@
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { extname, join } from "node:path";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { existsSync, mkdirSync, unlinkSync } from "fs";
-import { extname, join } from "path";
 import { v4 as uuid } from "uuid";
 import { createApiKey, listApiKeys, revokeApiKey } from "./apikey.ts";
 import type { AuthUser } from "./auth.ts";
@@ -235,7 +235,7 @@ const TaskListSchema = z
 const TaskCreatedSchema = z
   .object({
     id: z.string().uuid(),
-    status: z.literal("pending"),
+    status: z.enum(["pending", "completed"]),
     message: z.string(),
   })
   .openapi("TaskCreated");
@@ -381,7 +381,10 @@ app.openapi(uploadRoute, async (c) => {
       $pages: existing.pages,
       $user_id: userId,
     });
-    return c.json({ id, status: "completed", message: "Duplicate file, returning cached result" });
+    return c.json(
+      { id, status: "completed" as const, message: "Duplicate file, returning cached result" },
+      200,
+    );
   }
 
   const saved = await saveBuffer(buf, ext);
@@ -410,7 +413,7 @@ app.openapi(uploadRoute, async (c) => {
   };
 
   processTask({ id, original_name: file.name }, saved.path, options);
-  return c.json({ id, status: "pending", message: "Processing started" });
+  return c.json({ id, status: "pending" as const, message: "Processing started" }, 200);
 });
 
 const parseAsyncRoute = createRoute({
@@ -474,7 +477,10 @@ app.openapi(parseAsyncRoute, async (c) => {
       $pages: existing.pages,
       $user_id: userId,
     });
-    return c.json({ id, status: "completed", message: "Duplicate file, returning cached result" });
+    return c.json(
+      { id, status: "completed" as const, message: "Duplicate file, returning cached result" },
+      200,
+    );
   }
 
   const saved = await saveBuffer(buf, ext);
@@ -505,7 +511,7 @@ app.openapi(parseAsyncRoute, async (c) => {
   };
 
   processTask({ id, original_name: file.name }, saved.path, options);
-  return c.json({ id, status: "pending", message: "Processing started" });
+  return c.json({ id, status: "pending" as const, message: "Processing started" }, 200);
 });
 
 const parseSyncRoute = createRoute({
@@ -577,13 +583,16 @@ app.openapi(parseSyncRoute, async (c) => {
       $pages: existing.pages,
       $user_id: userId,
     });
-    return c.json({
-      id,
-      status: "completed",
-      markdown: existing.result_md || "",
-      content_list: existing.content_list ? JSON.parse(existing.content_list) : [],
-      pages: existing.pages ? JSON.parse(existing.pages) : [],
-    });
+    return c.json(
+      {
+        id,
+        status: "completed" as const,
+        markdown: existing.result_md || "",
+        content_list: existing.content_list ? JSON.parse(existing.content_list) : [],
+        pages: existing.pages ? JSON.parse(existing.pages) : [],
+      },
+      200,
+    );
   }
 
   const saved = await saveBuffer(buf, ext);
@@ -622,17 +631,20 @@ app.openapi(parseSyncRoute, async (c) => {
       $content_list: JSON.stringify(result.contentList),
       $pages: JSON.stringify(result.pages),
     });
-    return c.json({
-      id,
-      status: "completed",
-      markdown: result.markdown,
-      content_list: result.contentList,
-      pages: result.pages,
-    });
+    return c.json(
+      {
+        id,
+        status: "completed" as const,
+        markdown: result.markdown,
+        content_list: result.contentList,
+        pages: result.pages,
+      },
+      200,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     stmt.setError.run({ $id: id, $error: message });
-    return c.json({ id, status: "failed", error: message }, 500);
+    return c.json({ id, status: "failed" as const, error: message }, 500);
   }
 });
 
@@ -663,7 +675,7 @@ app.openapi(getTaskRoute, (c) => {
   const userId = getUserId(c);
   const task = stmt.getById.get(c.req.param("id"), userId) as OcrTask | undefined;
   if (!task) return c.json({ error: "Task not found" }, 404);
-  return c.json(serializeTask(task));
+  return c.json(serializeTask(task), 200);
 });
 
 const listTasksRoute = createRoute({
@@ -777,7 +789,7 @@ app.openapi(deleteTaskRoute, (c) => {
   if (!task) return c.json({ error: "Task not found" }, 404);
   cleanFile(join(UPLOAD_DIR, task.filename));
   stmt.deleteById.run(c.req.param("id"), userId);
-  return c.json({ message: "Deleted" });
+  return c.json({ message: "Deleted" }, 200);
 });
 
 const batchDeleteRoute = createRoute({
@@ -818,7 +830,7 @@ app.openapi(batchDeleteRoute, (c) => {
     if (task) cleanFile(join(UPLOAD_DIR, task.filename));
   }
   stmt.deleteByIds(ids, userId!);
-  return c.json({ deleted: ids.length });
+  return c.json({ deleted: ids.length }, 200);
 });
 
 const updateContentRoute = createRoute({
@@ -868,7 +880,7 @@ app.openapi(updateContentRoute, (c) => {
   });
 
   const updated = stmt.getById.get(task.id, userId) as OcrTask;
-  return c.json(serializeTask(updated));
+  return c.json(serializeTask(updated), 200);
 });
 
 const reprocessRoute = createRoute({
@@ -1018,17 +1030,20 @@ app.openapi(reprocessRoute, async (c) => {
     })();
 
     const label = pageIndices.map((i) => i + 1).join(", ");
-    return c.json({
-      id: task.id,
-      status: "processing",
-      message: `Re-OCR page(s) ${label} started`,
-    });
+    return c.json(
+      {
+        id: task.id,
+        status: "processing",
+        message: `Re-OCR page(s) ${label} started`,
+      },
+      200,
+    );
   }
 
   stmt.setStatus.run({ $id: task.id, $status: "pending" });
   processTask({ id: task.id, original_name: task.original_name }, filePath, options);
 
-  return c.json({ id: task.id, status: "pending", message: "Reprocessing started" });
+  return c.json({ id: task.id, status: "pending", message: "Reprocessing started" }, 200);
 });
 
 app.get("/files/:filename", async (c) => {
@@ -1117,6 +1132,10 @@ const apiKeyListRoute = createRoute({
         },
       },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
   },
 });
 
@@ -1124,7 +1143,7 @@ app.openapi(apiKeyListRoute, (c) => {
   const userId = getUserId(c);
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
   const keys = listApiKeys(userId);
-  return c.json(keys);
+  return c.json(keys, 200);
 });
 
 const apiKeyCreateRoute = createRoute({
@@ -1150,6 +1169,10 @@ const apiKeyCreateRoute = createRoute({
         },
       },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
   },
 });
 
@@ -1158,7 +1181,7 @@ app.openapi(apiKeyCreateRoute, (c) => {
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
   const body = c.req.valid("json");
   const result = createApiKey(userId, body.name);
-  return c.json(result);
+  return c.json(result, 200);
 });
 
 const apiKeyDeleteRoute = createRoute({
@@ -1174,6 +1197,10 @@ const apiKeyDeleteRoute = createRoute({
       description: "Revoked",
       content: { "application/json": { schema: z.object({ message: z.string() }) } },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Not found",
       content: { "application/json": { schema: ErrorSchema } },
@@ -1186,7 +1213,7 @@ app.openapi(apiKeyDeleteRoute, (c) => {
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
   const success = revokeApiKey(c.req.param("id"), userId);
   if (!success) return c.json({ error: "API key not found" }, 404);
-  return c.json({ message: "Revoked" });
+  return c.json({ message: "Revoked" }, 200);
 });
 
 app.get(

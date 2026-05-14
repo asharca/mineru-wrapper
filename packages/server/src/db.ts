@@ -31,23 +31,44 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source);
 `);
 
-// Migrations
-for (const col of [
-  "content_list TEXT",
-  "pages TEXT",
-  "file_hash TEXT",
-  "progress TEXT",
-  "user_id TEXT",
-]) {
+// ---- Migration system ----
+
+db.exec(`CREATE TABLE IF NOT EXISTS migrations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+
+function runMigration(name: string, sql: string): void {
+  const exists = db.prepare("SELECT 1 FROM migrations WHERE name = ?").get(name);
+  if (exists) return;
   try {
-    db.exec(`ALTER TABLE tasks ADD COLUMN ${col}`);
-  } catch {
-    /* exists */
+    db.transaction(() => {
+      db.exec(sql);
+      db.prepare("INSERT INTO migrations (name) VALUES (?)").run(name);
+    })();
+  } catch (e) {
+    // ALTER TABLE ADD COLUMN is idempotent: if the column already exists in the
+    // CREATE TABLE schema, record the migration as done and continue.
+    if (e instanceof Error && e.message.includes("duplicate column name")) {
+      db.prepare("INSERT OR IGNORE INTO migrations (name) VALUES (?)").run(name);
+      return;
+    }
+    throw e;
   }
 }
-db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_file_hash ON tasks(file_hash)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks(user_id, created_at DESC)`);
+
+runMigration("add_content_list", "ALTER TABLE tasks ADD COLUMN content_list TEXT");
+runMigration("add_pages", "ALTER TABLE tasks ADD COLUMN pages TEXT");
+runMigration("add_file_hash", "ALTER TABLE tasks ADD COLUMN file_hash TEXT");
+runMigration("add_progress", "ALTER TABLE tasks ADD COLUMN progress TEXT");
+runMigration("add_user_id", "ALTER TABLE tasks ADD COLUMN user_id TEXT");
+runMigration("idx_file_hash", "CREATE INDEX IF NOT EXISTS idx_tasks_file_hash ON tasks(file_hash)");
+runMigration("idx_user_id", "CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)");
+runMigration(
+  "idx_user_created",
+  "CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks(user_id, created_at DESC)",
+);
 
 export interface ContentBlock {
   type: string;

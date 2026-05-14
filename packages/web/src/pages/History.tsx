@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { AlertCircle, ChevronLeft, ChevronRight, Search, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,11 @@ function HighlightText({ text, query }: { text: string; query: string }) {
     <>
       {parts.map((part, i) =>
         i % 2 === 1 ? (
-          <mark key={i} style={{ background: "#fde047", borderRadius: "2px", padding: "0 1px" }}>
+          <mark
+            // biome-ignore lint/suspicious/noArrayIndexKey: parts are derived from a stable regex split
+            key={i}
+            style={{ background: "#fde047", borderRadius: "2px", padding: "0 1px" }}
+          >
             {part}
           </mark>
         ) : (
@@ -103,6 +107,7 @@ export default function HistoryPage() {
   }, [page, source, search]);
 
   // Reset to page 1 and clear selection when search/source changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: search/source are intentional triggers
   useEffect(() => {
     setPage(1);
     setSelected(new Set());
@@ -158,7 +163,9 @@ export default function HistoryPage() {
       // All checked -> deselect all on this page
       setSelected((prev) => {
         const next = new Set(prev);
-        allIds.forEach((id) => next.delete(id));
+        allIds.forEach((id) => {
+          next.delete(id);
+        });
         return next;
       });
     } else {
@@ -216,6 +223,7 @@ export default function HistoryPage() {
         />
         {searchInput && (
           <button
+            type="button"
             onClick={() => setSearchInput("")}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
           >
