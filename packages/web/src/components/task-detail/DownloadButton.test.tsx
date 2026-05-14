@@ -45,6 +45,30 @@ describe("DownloadButton", () => {
     expect(mockRevokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
   });
 
+  it("sets the correct filename on the anchor element", async () => {
+    const user = userEvent.setup();
+    const originalCreateElement = document.createElement.bind(document);
+    let capturedAnchor: HTMLAnchorElement | null = null;
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const el = originalCreateElement(tag);
+      if (tag === "a") capturedAnchor = el as HTMLAnchorElement;
+      return el;
+    });
+
+    render(
+      <DownloadButton
+        content="# Hello"
+        filename="report.md"
+        label="Download MD"
+        mimeType="text/markdown"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /download md/i }));
+
+    expect(capturedAnchor?.download).toBe("report.md");
+  });
+
   it("creates a blob with the correct mime type", async () => {
     const user = userEvent.setup();
     render(
