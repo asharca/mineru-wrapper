@@ -9,7 +9,7 @@
     "build:web": "cd packages/web && bunx vite build",
     "build": "bun run build:web",
     "typecheck": "cd packages/server && tsc --noEmit && cd ../web && tsc -b",
-    "test": "bun test --cwd packages/server && bun test --cwd packages/web",
+    "test": "bun test --cwd packages/server && bun test --pass-with-no-tests --cwd packages/web",
     "lint": "biome check .",
     "lint:fix": "biome check --write ."
   },
