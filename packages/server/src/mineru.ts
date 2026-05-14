@@ -5,6 +5,20 @@ import { degrees, PDFDocument } from "pdf-lib";
 import sharp from "sharp";
 import { v4 as uuid } from "uuid";
 import type { ContentBlock } from "./db.ts";
+import { logger } from "./logger.ts";
+
+export function applyImageUrls(
+  blocks: ContentBlock[],
+  urlMap: Record<string, string>,
+): ContentBlock[] {
+  return blocks.map((block) => {
+    if (!block.img_path) return block;
+    const key = block.img_path.replace(/^images\//, "");
+    const img_url = urlMap[key];
+    if (!img_url) return block;
+    return { ...block, img_url };
+  });
+}
 
 const DEFAULT_MINERU_URL = process.env.MINERU_URL || "http://10.0.10.2:8001";
 const PADDLEOCR_URL = process.env.PADDLEOCR_URL || "http://localhost:8000";
@@ -61,7 +75,7 @@ async function detectRotationsHttp(imageBuffers: Buffer[]): Promise<number[]> {
 
     if (!res.ok) {
       const text = await res.text();
-      console.error(`[auto-rotate] PaddleOCR service error ${res.status}: ${text}`);
+      logger.error("[auto-rotate] PaddleOCR service error", { status: res.status, body: text });
       return imageBuffers.map(() => 0);
     }
 
@@ -69,10 +83,10 @@ async function detectRotationsHttp(imageBuffers: Buffer[]): Promise<number[]> {
     if (Array.isArray(json.angles) && json.angles.length === imageBuffers.length) {
       return json.angles;
     }
-    console.error("[auto-rotate] Unexpected PaddleOCR response:", json);
+    logger.error("[auto-rotate] Unexpected PaddleOCR response", { json });
     return imageBuffers.map(() => 0);
   } catch (e) {
-    console.error("[auto-rotate] PaddleOCR request failed:", e);
+    logger.error("[auto-rotate] PaddleOCR request failed", { error: String(e) });
     return imageBuffers.map(() => 0);
   }
 }
@@ -99,7 +113,7 @@ async function autoRotateImage(filePath: string): Promise<void> {
   }
 
   const [angle = 0] = await detectRotationsHttp([thumb]);
-  console.log(`[auto-rotate] image -> angle=${angle}°`);
+  logger.info("[auto-rotate] image", { angle });
 
   // Step 3: Rotate original image if needed
   if (angle > 0) {
@@ -145,13 +159,13 @@ async function autoRotatePdf(filePath: string): Promise<void> {
 
   const needsRotation = angles.some((a) => a !== 0);
   if (!needsRotation) {
-    console.log(`[auto-rotate] pdf: no rotation needed for any page`);
+    logger.info("[auto-rotate] pdf: no rotation needed");
     return;
   }
 
-  console.log(
-    `[auto-rotate] pdf page angles: ${angles.map((a, i) => `p${i + 1}=${a}°`).join(", ")}`,
-  );
+  logger.info("[auto-rotate] pdf page angles", {
+    angles: angles.map((a, i) => `p${i + 1}=${a}°`).join(", "),
+  });
 
   // Step 3: Apply rotation via pdf-lib metadata (unified with manual rotate)
   const srcPdf = await PDFDocument.load(pdfBytes);
@@ -160,7 +174,7 @@ async function autoRotatePdf(filePath: string): Promise<void> {
     if (angle !== 0) {
       const page = srcPdf.getPage(i);
       page.setRotation(degrees(angle));
-      console.log(`[auto-rotate] pdf page ${i + 1}/${numPages} set rotation ${angle}°`);
+      logger.info("[auto-rotate] pdf page rotation set", { page: i + 1, total: numPages, angle });
     }
   }
 
@@ -201,7 +215,7 @@ export async function rotateFile(
     const buf = await Bun.file(filePath).arrayBuffer();
     const rotated = await sharp(Buffer.from(buf)).rotate(angle).toBuffer();
     await Bun.write(filePath, rotated);
-    console.log(`[rotate] image rotated ${angle}°`);
+    logger.info("[rotate] image rotated", { angle });
     return;
   }
 
@@ -218,9 +232,9 @@ export async function rotateFile(
         const page = srcPdf.getPage(i);
         const currentRotation = page.getRotation().angle;
         page.setRotation(degrees(currentRotation + angle));
-        console.log(`[rotate] pdf page ${i + 1}/${numPages} rotated ${angle}°`);
+        logger.info("[rotate] pdf page rotated", { page: i + 1, total: numPages, angle });
       } else {
-        console.log(`[rotate] pdf page ${i + 1}/${numPages} kept`);
+        logger.info("[rotate] pdf page kept", { page: i + 1, total: numPages });
       }
     }
 
@@ -402,14 +416,7 @@ async function extractResults(
           urlMap[key] = `/files/img/${imgFilename}`;
         }
 
-        for (const block of contentList) {
-          if (block.img_path) {
-            const key = block.img_path.replace(/^images\//, "");
-            if (urlMap[key]) {
-              block.img_url = urlMap[key];
-            }
-          }
-        }
+        contentList = applyImageUrls(contentList, urlMap);
 
         for (const [key, url] of Object.entries(urlMap)) {
           markdown = markdown.replaceAll(`images/${key}`, url);
