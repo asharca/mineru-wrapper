@@ -57,7 +57,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 // ---- Helpers ----
 
 function basename(name: string): string {
-  return name.replace(/\.[^.]+$/, "");
+  const stripped = name.replace(/\.[^.]+$/, "");
+  return stripped || name;
 }
 
 // ---- Status config ----
