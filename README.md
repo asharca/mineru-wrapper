@@ -26,6 +26,47 @@
 | 前端 | React 19 + Vite + Tailwind CSS v4 |
 | 容器化 | Docker + Docker Compose |
 
+## 开发
+
+### 测试
+
+```bash
+# 运行全部测试（server + web）
+bun run test
+
+# 仅运行后端测试
+bun test --cwd packages/server
+
+# 仅运行前端测试
+bun run --cwd packages/web test
+```
+
+后端测试使用 **Bun 内置测试运行器**，测试文件位于 `packages/server/src/*.test.ts`。每次运行前 `test-preload.ts` 会自动隔离测试数据库（`data/test-all.db`）和上传目录（`uploads-test/`），无需手动清理。
+
+| 测试文件 | 覆盖范围 |
+|----------|----------|
+| `auth.test.ts` | 注册、登录、会话隔离、多用户数据隔离 |
+| `apikeys.test.ts` | API Key 创建、撤销、鉴权、跨用户隔离 |
+| `tasks.test.ts` | 上传、任务查询、去重缓存、下载、删除 |
+
+前端测试使用 **Vitest**，测试文件位于 `packages/web/src/**/*.test.tsx`。
+
+### Pre-commit 钩子
+
+项目使用 [Lefthook](https://github.com/evilmartians/lefthook) 管理 Git 钩子，每次 `git commit` 前自动并行执行：
+
+| 检查 | 命令 | 说明 |
+|------|------|------|
+| lint | `biome check --write` | 仅对暂存的 `.ts`/`.tsx` 文件格式化 |
+| typecheck | `bun run typecheck` | 全量 TypeScript 类型检查 |
+| test | `bun run test` | 全部测试必须通过 |
+
+首次克隆后执行一次即可激活钩子：
+
+```bash
+bunx lefthook install
+```
+
 ## 快速开始
 
 ### 前置条件
