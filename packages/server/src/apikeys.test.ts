@@ -10,7 +10,7 @@ describe("API Keys", () => {
 
   beforeAll(async () => {
     const mod = await import("../index.ts");
-    app = mod.default;
+    app = mod.app;
 
     async function register(email: string): Promise<string> {
       const res = await app.request("/api/auth/sign-up/email", {

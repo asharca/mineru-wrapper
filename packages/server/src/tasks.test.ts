@@ -11,7 +11,7 @@ describe("Upload & Tasks API", () => {
 
   beforeAll(async () => {
     const mod = await import("../index.ts");
-    app = mod.default;
+    app = mod.app;
     stmt = (await import("./db.ts")).stmt;
 
     const res = await app.request("/api/auth/sign-up/email", {

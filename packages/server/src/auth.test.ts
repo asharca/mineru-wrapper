@@ -10,7 +10,7 @@ describe("Auth & Data Isolation", () => {
 
   beforeAll(async () => {
     const mod = await import("../index.ts");
-    app = mod.default;
+    app = mod.app;
   });
 
   async function registerAndLogin(email: string, password: string): Promise<string> {
