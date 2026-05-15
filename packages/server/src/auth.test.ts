@@ -1,31 +1,16 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import type { Hono } from "hono";
 
+// DB_PATH and initial cleanup are handled by test-preload.ts
+
 describe("Auth & Data Isolation", () => {
-  const testDbPath = "./data/test-ocr.db";
   let app: Hono;
   let userA: { email: string; password: string; sessionCookie?: string };
   let userB: { email: string; password: string; sessionCookie?: string };
 
   beforeAll(async () => {
-    process.env.DB_PATH = testDbPath;
-    // Clean up test db
-    try {
-      await Bun.file(testDbPath).delete();
-    } catch {
-      /* ignore */
-    }
-    // Dynamic import so auth.ts picks up the DB_PATH env var
     const mod = await import("../index.ts");
     app = mod.default;
-  });
-
-  afterAll(() => {
-    try {
-      Bun.file(testDbPath).delete();
-    } catch {
-      /* ignore */
-    }
   });
 
   async function registerAndLogin(email: string, password: string): Promise<string> {

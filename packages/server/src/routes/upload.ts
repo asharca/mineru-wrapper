@@ -1,5 +1,5 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { mkdirSync } from "node:fs";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { v4 as uuid } from "uuid";
 import { type OcrTask, stmt } from "../db.ts";
 import { type ParseOptions, parseFile } from "../mineru.ts";
@@ -56,7 +56,12 @@ uploadApp.openapi(uploadRoute, async (c) => {
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
-  const { buf, hash, ext } = await readUploadFile(file);
+  let buf: ArrayBuffer, hash: string, ext: string;
+  try {
+    ({ buf, hash, ext } = await readUploadFile(file));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "Invalid file" }, 400);
+  }
   const id = uuid();
   const backend = String(body["backend"] || "pipeline");
   const lang = String(body["lang"] || "ch");
@@ -147,7 +152,12 @@ uploadApp.openapi(parseAsyncRoute, async (c) => {
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
-  const { buf, hash, ext } = await readUploadFile(file);
+  let buf: ArrayBuffer, hash: string, ext: string;
+  try {
+    ({ buf, hash, ext } = await readUploadFile(file));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "Invalid file" }, 400);
+  }
   const id = uuid();
   const backend = String(body["backend"] || "pipeline");
   const langRaw = body["lang_list"];
@@ -253,7 +263,12 @@ uploadApp.openapi(parseSyncRoute, async (c) => {
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "No file uploaded" }, 400);
 
-  const { buf, hash, ext } = await readUploadFile(file);
+  let buf: ArrayBuffer, hash: string, ext: string;
+  try {
+    ({ buf, hash, ext } = await readUploadFile(file));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "Invalid file" }, 400);
+  }
   const id = uuid();
   const backend = String(body["backend"] || "pipeline");
   const langRaw = body["lang_list"];

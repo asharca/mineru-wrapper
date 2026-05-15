@@ -13,7 +13,7 @@ export const auth = betterAuth({
     cookiePrefix: "better-auth",
   },
   secret: process.env.BETTER_AUTH_SECRET || "test-secret-change-me-in-production",
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3002",
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5173",
 });
 
 // Initialize context and run migrations

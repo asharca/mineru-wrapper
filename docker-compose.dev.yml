@@ -1,20 +1,20 @@
 services:
-  ocr-center:
-    build: .
-    ports:
-      - "3002:3001"
-    environment:
-      - MINERU_URL=http://10.0.10.2:8001
-      - PADDLEOCR_URL=http://paddleocr:8000
-      - DB_PATH=/app/data/ocr.db
-      - PORT=3001
-      - BETTER_AUTH_URL=http://localhost:3002
-    volumes:
-      - ocr-data:/app/data
-      - ocr-uploads:/app/uploads
-    restart: unless-stopped
-    depends_on:
-      - paddleocr
+  # ocr-center:
+  #   build: .
+  #   ports:
+  #     - "3002:3001"
+  #   environment:
+  #     - MINERU_URL=http://10.0.10.2:8001
+  #     - PADDLEOCR_URL=http://paddleocr:8000
+  #     - DB_PATH=/app/data/ocr.db
+  #     - PORT=3001
+  #     - BETTER_AUTH_URL=http://localhost:3002
+  #   volumes:
+  #     - ocr-data:/app/data
+  #     - ocr-uploads:/app/uploads
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - paddleocr
 
   paddleocr:
     build:

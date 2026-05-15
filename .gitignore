@@ -36,6 +36,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # app data
 data/
 uploads/
+uploads-test/
 *.db
 
 # demo files
