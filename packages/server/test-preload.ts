@@ -17,9 +17,21 @@ try {
   const ageMs = Date.now() - mtimeMs;
   if (ageMs > 3000) {
     rmSync(TEST_DB);
-    try { rmSync(`${TEST_DB}-wal`); } catch { /* ignore */ }
-    try { rmSync(`${TEST_DB}-shm`); } catch { /* ignore */ }
-    try { rmSync(TEST_UPLOADS, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      rmSync(`${TEST_DB}-wal`);
+    } catch {
+      /* ignore */
+    }
+    try {
+      rmSync(`${TEST_DB}-shm`);
+    } catch {
+      /* ignore */
+    }
+    try {
+      rmSync(TEST_UPLOADS, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   }
 } catch {
   // DB doesn't exist yet — nothing to delete
