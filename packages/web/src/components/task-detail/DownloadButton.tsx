@@ -35,7 +35,7 @@ export function DownloadButton({ content, filename, label, mimeType }: DownloadB
           {label}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent>Download as file</TooltipContent>
     </Tooltip>
   );
 }

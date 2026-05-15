@@ -14,7 +14,7 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
   };
   return (
     <Tooltip>
-      <TooltipTrigger>
+      <TooltipTrigger render={<span />}>
         <Button
           variant={copied ? "default" : "outline"}
           size="sm"
