@@ -46,12 +46,19 @@ import {
 } from "../api.ts";
 import { BlockView } from "../components/task-detail/BlockView.tsx";
 import { CopyButton } from "../components/task-detail/CopyButton.tsx";
+import { DownloadButton } from "../components/task-detail/DownloadButton.tsx";
 import { ImageOverlay } from "../components/task-detail/ImageOverlay.tsx";
 import { PdfViewer } from "../components/task-detail/PdfViewer.tsx";
 import { RenderedView } from "../components/task-detail/RenderedView.tsx";
 import { useDebounce } from "../components/task-detail/utils.tsx";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
+// ---- Helpers ----
+
+function basename(name: string): string {
+  return name.replace(/\.[^.]+$/, "");
+}
 
 // ---- Status config ----
 
@@ -548,6 +555,22 @@ export default function TaskDetail() {
         </Button>
 
         {!editing && <CopyButton text={task.result_md || ""} label="Copy MD" />}
+        {!editing && task.result_md && (
+          <DownloadButton
+            content={task.result_md}
+            filename={`${basename(task.original_name)}.md`}
+            label="Download MD"
+            mimeType="text/markdown"
+          />
+        )}
+        {!editing && task.content_list && (
+          <DownloadButton
+            content={JSON.stringify(task.content_list, null, 2)}
+            filename={`${basename(task.original_name)}.json`}
+            label="Download JSON"
+            mimeType="application/json"
+          />
+        )}
       </div>
 
       {/* In-document search bar */}
