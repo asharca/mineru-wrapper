@@ -1,0 +1,4 @@
+[test]
+# Run server tests only; web tests use vitest (bun run --cwd packages/web test)
+root = "./packages/server"
+preload = ["./packages/server/test-preload.ts"]
