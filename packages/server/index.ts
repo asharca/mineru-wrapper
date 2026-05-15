@@ -10,7 +10,8 @@ const PORT = Number(process.env.PORT) || 3001;
 const app = new Hono();
 app.use("*", cors({ origin: process.env.CORS_ORIGIN || "*", credentials: true }));
 
-// Better-auth routes (public) - MUST be before protected routes
+// Public routes (no auth required)
+app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.all("/api/auth/*", (c) => auth.handler(c.req.raw));
 
 // Apply auth middleware to protected routes BEFORE registering them
