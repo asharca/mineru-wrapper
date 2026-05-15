@@ -52,7 +52,10 @@ import { PdfViewer } from "../components/task-detail/PdfViewer.tsx";
 import { RenderedView } from "../components/task-detail/RenderedView.tsx";
 import { useDebounce } from "../components/task-detail/utils.tsx";
 
-pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 // ---- Helpers ----
 

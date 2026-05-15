@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# pdfjs worker (sourced from node_modules at build time)
+public/pdf.worker.min.mjs
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
