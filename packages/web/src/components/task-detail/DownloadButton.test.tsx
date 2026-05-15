@@ -66,7 +66,7 @@ describe("DownloadButton", () => {
 
     await user.click(screen.getByRole("button", { name: /download md/i }));
 
-    expect(capturedAnchor?.download).toBe("report.md");
+    expect((capturedAnchor as HTMLAnchorElement | null)?.download).toBe("report.md");
   });
 
   it("creates a blob with the correct mime type", async () => {
@@ -82,7 +82,7 @@ describe("DownloadButton", () => {
 
     await user.click(screen.getByRole("button", { name: /download json/i }));
 
-    const blob: Blob = mockCreateObjectURL.mock.calls[0][0];
+    const blob = (mockCreateObjectURL.mock.calls[0] as unknown as [Blob])[0];
     expect(blob.type).toBe("application/json");
   });
 });
