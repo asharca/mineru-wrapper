@@ -1,18 +1,23 @@
 import { FileUp, Loader2, RotateCcw, Upload } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uploadFile } from "../api.ts";
-import { loadSettings } from "../settings.ts";
+import { useSettings } from "../SettingsContext.tsx";
 
 export default function UploadPage() {
   const navigate = useNavigate();
+  const { settings, loading } = useSettings();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const [autoRotate, setAutoRotate] = useState(() => loadSettings().auto_rotate);
+  const [autoRotate, setAutoRotate] = useState(false);
+
+  useEffect(() => {
+    setAutoRotate(settings.auto_rotate);
+  }, [settings.auto_rotate]);
 
   const onDrop = useCallback(
     async (files: File[]) => {
@@ -20,7 +25,6 @@ export default function UploadPage() {
       setUploading(true);
       setError("");
       try {
-        const settings = loadSettings();
         const result = await uploadFile(files[0], {
           backend: settings.backend,
           lang: settings.lang,
@@ -37,7 +41,7 @@ export default function UploadPage() {
         setUploading(false);
       }
     },
-    [navigate, autoRotate],
+    [navigate, autoRotate, settings],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -51,7 +55,7 @@ export default function UploadPage() {
       "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
     },
     multiple: false,
-    disabled: uploading,
+    disabled: uploading || loading,
   });
 
   return (
@@ -70,7 +74,7 @@ export default function UploadPage() {
         className={`
           cursor-pointer transition-all duration-200
           ${isDragActive ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-dashed hover:border-primary/50 hover:bg-muted/50"}
-          ${uploading ? "opacity-60 cursor-not-allowed" : ""}
+          ${uploading || loading ? "opacity-60 cursor-not-allowed" : ""}
         `}
       >
         <CardContent {...getRootProps()} className="py-16">
