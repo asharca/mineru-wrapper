@@ -106,6 +106,15 @@ runMigration(
    END`,
 );
 
+runMigration(
+  "user_settings",
+  `CREATE TABLE IF NOT EXISTS user_settings (
+     user_id    TEXT PRIMARY KEY,
+     settings   TEXT NOT NULL,
+     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+   )`,
+);
+
 export interface ContentBlock {
   type: string;
   bbox: [number, number, number, number];
@@ -217,6 +226,12 @@ export const stmt = {
       )
       .run(userId, ...ids);
   },
+  getSettings: db.prepare(`SELECT settings FROM user_settings WHERE user_id = ?1`),
+  upsertSettings: db.prepare(
+    `INSERT INTO user_settings (user_id, settings, updated_at)
+     VALUES ($user_id, $settings, datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET settings = $settings, updated_at = datetime('now')`,
+  ),
 };
 
 export default db;
