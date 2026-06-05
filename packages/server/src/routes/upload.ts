@@ -115,7 +115,7 @@ uploadApp.openapi(uploadRoute, async (c) => {
     auto_rotate: body["auto_rotate"] === "true",
     mineru_url: body["mineru_url"]
       ? String(body["mineru_url"])
-      : getUserSettings(getUserId(c))?.mineru_url || undefined,
+      : getUserSettings(userId)?.mineru_url || undefined,
   };
 
   processTask({ id, original_name: file.name }, saved.path, options);
@@ -220,7 +220,7 @@ uploadApp.openapi(parseAsyncRoute, async (c) => {
     auto_rotate: body["auto_rotate"] === "true",
     mineru_url: body["mineru_url"]
       ? String(body["mineru_url"])
-      : getUserSettings(getUserId(c))?.mineru_url || undefined,
+      : getUserSettings(userId)?.mineru_url || undefined,
   };
 
   processTask({ id, original_name: file.name }, saved.path, options);
@@ -339,7 +339,7 @@ uploadApp.openapi(parseSyncRoute, async (c) => {
     auto_rotate: body["auto_rotate"] === "true",
     mineru_url: body["mineru_url"]
       ? String(body["mineru_url"])
-      : getUserSettings(getUserId(c))?.mineru_url || undefined,
+      : getUserSettings(userId)?.mineru_url || undefined,
   };
 
   try {
