@@ -1,3 +1,5 @@
+import type { OcrSettings } from "./settings.ts";
+
 export interface ContentBlock {
   type: string;
   bbox: [number, number, number, number];
@@ -185,4 +187,20 @@ export async function createApiKey(name?: string): Promise<{ key: string; prefix
 export async function revokeApiKey(id: string): Promise<void> {
   const res = await apiFetch(`/api/api-keys/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
+}
+
+export async function getSettings(): Promise<OcrSettings> {
+  const res = await apiFetch("/api/settings");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function updateSettings(settings: OcrSettings): Promise<OcrSettings> {
+  const res = await apiFetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }

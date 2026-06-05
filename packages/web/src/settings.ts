@@ -35,7 +35,7 @@ export interface OcrSettings {
   mineru_url: string;
 }
 
-const DEFAULTS: OcrSettings = {
+export const DEFAULTS: OcrSettings = {
   backend: "hybrid-auto-engine",
   lang: "ch",
   parse_method: "auto",
