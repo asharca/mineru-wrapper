@@ -1,5 +1,3 @@
-const STORAGE_KEY = "ocr-settings";
-
 export const BACKENDS = [
   { value: "hybrid-auto-engine", label: "Hybrid Auto (新一代多语言高精度)" },
   { value: "hybrid-http-client", label: "Hybrid HTTP (远程高精度)" },
@@ -44,17 +42,3 @@ export const DEFAULTS: OcrSettings = {
   auto_rotate: false,
   mineru_url: "",
 };
-
-export function loadSettings(): OcrSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
-  } catch {
-    /* ignore */
-  }
-  return { ...DEFAULTS };
-}
-
-export function saveSettings(settings: OcrSettings): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-}
