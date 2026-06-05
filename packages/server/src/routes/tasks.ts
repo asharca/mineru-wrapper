@@ -6,6 +6,7 @@ import { extractPdfPages, type ParseOptions, parseFile, rotateFile } from "../mi
 import {
   cleanFile,
   getUserId,
+  getUserSettings,
   MIME_MAP,
   processTask,
   serializeTask,
@@ -334,7 +335,7 @@ tasksApp.openapi(reprocessRoute, async (c) => {
     formula_enable: body.formula_enable ?? true,
     table_enable: body.table_enable ?? true,
     auto_rotate: body.auto_rotate ?? false,
-    mineru_url: body.mineru_url || undefined,
+    mineru_url: body.mineru_url || getUserSettings(userId)?.mineru_url || undefined,
   };
 
   if (body.page_indices?.length) {

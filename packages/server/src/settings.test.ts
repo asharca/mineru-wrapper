@@ -94,4 +94,25 @@ describe("User Settings", () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it("getUserSettings returns the saved mineru_url for a user", async () => {
+    const { getUserSettings } = await import("./routes/helpers.ts");
+    const { auth } = await import("./auth.ts");
+    const session = await auth.api.getSession({
+      headers: new Headers(authHeader(userACookie)),
+    });
+    const userId = session!.user.id;
+    const result = getUserSettings(userId);
+    expect(result?.mineru_url).toBe("http://example.test:9000");
+  });
+
+  it("getUserSettings returns null for an unknown user", async () => {
+    const { getUserSettings } = await import("./routes/helpers.ts");
+    expect(getUserSettings("no-such-user-id")).toBeNull();
+  });
+
+  it("getUserSettings returns null when userId is null", async () => {
+    const { getUserSettings } = await import("./routes/helpers.ts");
+    expect(getUserSettings(null)).toBeNull();
+  });
 });

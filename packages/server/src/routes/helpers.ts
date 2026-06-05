@@ -3,6 +3,7 @@ import { extname, join } from "node:path";
 import { v4 as uuid } from "uuid";
 import type { AuthUser } from "../auth.ts";
 import { type OcrTask, stmt } from "../db.ts";
+import type { Settings } from "./schemas.ts";
 import { type ParseOptions, parseFile } from "../mineru.ts";
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
@@ -40,6 +41,17 @@ export const MIME_MAP: Record<string, string> = {
 export function getUserId(c: { get: (key: string) => unknown }): string | null {
   const user = c.get("user") as AuthUser | undefined;
   return user?.id ?? null;
+}
+
+export function getUserSettings(userId: string | null): Settings | null {
+  if (!userId) return null;
+  const row = stmt.getSettings.get(userId) as { settings: string } | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.settings) as Settings;
+  } catch {
+    return null;
+  }
 }
 
 export async function readUploadFile(

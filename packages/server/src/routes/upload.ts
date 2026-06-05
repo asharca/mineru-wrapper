@@ -5,6 +5,7 @@ import { type OcrTask, stmt } from "../db.ts";
 import { type ParseOptions, parseFile } from "../mineru.ts";
 import {
   getUserId,
+  getUserSettings,
   processTask,
   readUploadFile,
   saveBuffer,
@@ -112,7 +113,9 @@ uploadApp.openapi(uploadRoute, async (c) => {
     formula_enable: body["formula_enable"] !== "false",
     table_enable: body["table_enable"] !== "false",
     auto_rotate: body["auto_rotate"] === "true",
-    mineru_url: body["mineru_url"] ? String(body["mineru_url"]) : undefined,
+    mineru_url: body["mineru_url"]
+      ? String(body["mineru_url"])
+      : getUserSettings(getUserId(c))?.mineru_url || undefined,
   };
 
   processTask({ id, original_name: file.name }, saved.path, options);
@@ -215,7 +218,9 @@ uploadApp.openapi(parseAsyncRoute, async (c) => {
     start_page_id: body["start_page_id"] ? Number(body["start_page_id"]) : undefined,
     end_page_id: body["end_page_id"] ? Number(body["end_page_id"]) : undefined,
     auto_rotate: body["auto_rotate"] === "true",
-    mineru_url: body["mineru_url"] ? String(body["mineru_url"]) : undefined,
+    mineru_url: body["mineru_url"]
+      ? String(body["mineru_url"])
+      : getUserSettings(getUserId(c))?.mineru_url || undefined,
   };
 
   processTask({ id, original_name: file.name }, saved.path, options);
@@ -332,7 +337,9 @@ uploadApp.openapi(parseSyncRoute, async (c) => {
     start_page_id: body["start_page_id"] ? Number(body["start_page_id"]) : undefined,
     end_page_id: body["end_page_id"] ? Number(body["end_page_id"]) : undefined,
     auto_rotate: body["auto_rotate"] === "true",
-    mineru_url: body["mineru_url"] ? String(body["mineru_url"]) : undefined,
+    mineru_url: body["mineru_url"]
+      ? String(body["mineru_url"])
+      : getUserSettings(getUserId(c))?.mineru_url || undefined,
   };
 
   try {
