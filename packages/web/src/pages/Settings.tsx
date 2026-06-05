@@ -14,24 +14,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { type ApiKey, createApiKey, listApiKeys, revokeApiKey } from "../api.ts";
-import {
-  BACKENDS,
-  LANGS,
-  loadSettings,
-  type OcrSettings,
-  PARSE_METHODS,
-  saveSettings,
-} from "../settings.ts";
-
-const DEFAULTS: OcrSettings = {
-  backend: "hybrid-auto-engine",
-  lang: "ch",
-  parse_method: "auto",
-  formula_enable: true,
-  table_enable: true,
-  auto_rotate: false,
-  mineru_url: "",
-};
+import { BACKENDS, LANGS, PARSE_METHODS } from "../settings.ts";
+import { useSettings } from "../SettingsContext.tsx";
 
 interface SettingRowProps {
   name: string;
@@ -55,17 +39,19 @@ function SettingRow({ name, hint, htmlFor, children }: SettingRowProps) {
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<OcrSettings>(loadSettings);
+  const { settings, updateSetting, reset } = useSettings();
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
 
-  const update = useCallback(<K extends keyof OcrSettings>(key: K, value: OcrSettings[K]) => {
-    setSettings((prev) => {
-      const next = { ...prev, [key]: value };
-      saveSettings(next);
-      return next;
-    });
-    setSaved(true);
-  }, []);
+  const update = useCallback(
+    <K extends keyof typeof settings>(key: K, value: (typeof settings)[K]) => {
+      setError("");
+      updateSetting(key, value)
+        .then(() => setSaved(true))
+        .catch((err) => setError(err instanceof Error ? err.message : "Failed to save"));
+    },
+    [updateSetting],
+  );
 
   useEffect(() => {
     if (!saved) return;
@@ -74,9 +60,10 @@ export default function SettingsPage() {
   }, [saved]);
 
   const handleReset = () => {
-    setSettings({ ...DEFAULTS });
-    saveSettings({ ...DEFAULTS });
-    setSaved(true);
+    setError("");
+    reset()
+      .then(() => setSaved(true))
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to reset"));
   };
 
   // API Key state
@@ -139,6 +126,7 @@ export default function SettingsPage() {
               Saved
             </span>
           )}
+          {error && <span className="text-xs text-destructive font-medium">{error}</span>}
           <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5">
             <RotateCcw className="h-3.5 w-3.5" />
             Reset
