@@ -21,6 +21,7 @@ app.use("/api/parse/sync", authMiddleware);
 app.use("/tasks/*", authMiddleware);
 app.use("/files/*", authMiddleware);
 app.use("/api/api-keys/*", authMiddleware);
+app.use("/api/settings", authMiddleware);
 
 // Protected API routes (auth middleware already applied above)
 app.route("/", routes);

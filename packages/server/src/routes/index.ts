@@ -1,6 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { apiKeysApp } from "./apikeys.ts";
+import { settingsApp } from "./settings.ts";
 import { tasksApp } from "./tasks.ts";
 import { uploadApp } from "./upload.ts";
 
@@ -9,6 +10,7 @@ const app = new OpenAPIHono();
 app.route("/", uploadApp);
 app.route("/", tasksApp);
 app.route("/", apiKeysApp);
+app.route("/", settingsApp);
 
 app.doc("/api/openapi", {
   openapi: "3.0.0",
