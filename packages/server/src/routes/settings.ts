@@ -27,7 +27,11 @@ settingsApp.openapi(getSettingsRoute, (c) => {
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
   const row = stmt.getSettings.get(userId) as { settings: string } | undefined;
   if (!row) return c.json(DEFAULT_SETTINGS, 200);
-  return c.json(JSON.parse(row.settings), 200);
+  try {
+    return c.json(JSON.parse(row.settings), 200);
+  } catch {
+    return c.json(DEFAULT_SETTINGS, 200);
+  }
 });
 
 const putSettingsRoute = createRoute({
