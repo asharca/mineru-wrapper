@@ -507,15 +507,17 @@ git commit -m "feat: default mineru_url from user settings in parse routes"
 
 ---
 
-## Task 5: Frontend API client + settings module cleanup
+## Task 5: Frontend API client + export DEFAULTS (additive only)
+
+> **Sequencing note:** Every commit must pass the pre-commit hook, which runs a FULL typecheck. `Settings.tsx`/`Upload.tsx` still import `loadSettings`/`saveSettings` until Tasks 7–8, so this task is **additive only** — it must NOT remove the localStorage helpers yet. The removal of `STORAGE_KEY`/`loadSettings`/`saveSettings` happens in Task 9 (after the pages are migrated), keeping each intermediate commit type-clean.
 
 **Files:**
 - Modify: `packages/web/src/settings.ts`
 - Modify: `packages/web/src/api.ts`
 
-- [ ] **Step 1: Remove localStorage load/save from settings.ts**
+- [ ] **Step 1: Export DEFAULTS from settings.ts (keep everything else)**
 
-In `packages/web/src/settings.ts`, delete the `STORAGE_KEY` constant (line 1) and the `loadSettings`/`saveSettings` functions (lines 48–60). Keep `BACKENDS`, `LANGS`, `PARSE_METHODS`, the `OcrSettings` interface, and `DEFAULTS`. Export `DEFAULTS`:
+In `packages/web/src/settings.ts`, change the `DEFAULTS` declaration (currently `const DEFAULTS: OcrSettings = {...}`) to be exported. Do NOT remove `STORAGE_KEY`, `loadSettings`, or `saveSettings` — they are still used by the pages and will be removed in Task 9.
 
 ```ts
 export const DEFAULTS: OcrSettings = {
@@ -560,13 +562,13 @@ export async function updateSettings(settings: OcrSettings): Promise<OcrSettings
 - [ ] **Step 3: Verify typecheck passes**
 
 Run: `bun run typecheck`
-Expected: PASS — note: `Settings.tsx` and `Upload.tsx` still import `loadSettings`, so this step will report errors there. That is expected and fixed in Tasks 7–8. Confirm the only errors are the missing `loadSettings`/`saveSettings` imports in those two files.
+Expected: PASS, clean — this task is additive (the localStorage helpers are still present), so there should be NO errors.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add packages/web/src/settings.ts packages/web/src/api.ts
-git commit -m "feat: add settings API client, drop localStorage helpers"
+git commit -m "feat: add settings API client and export DEFAULTS"
 ```
 
 ---
@@ -841,12 +843,24 @@ git commit -m "feat: upload page uses SettingsContext, blocks while loading"
 
 ---
 
-## Task 9: Full verification
+## Task 9: Remove localStorage helpers + full verification
 
-- [ ] **Step 1: Run the complete check suite**
+- [ ] **Step 1: Remove the now-unused localStorage helpers from settings.ts**
+
+After Tasks 7–8, nothing imports `loadSettings`/`saveSettings` anymore. In `packages/web/src/settings.ts`, delete the `STORAGE_KEY` constant and the `loadSettings` and `saveSettings` functions. Keep `BACKENDS`, `LANGS`, `PARSE_METHODS`, the `OcrSettings` interface, and the now-exported `DEFAULTS`.
+
+Verify nothing still references them:
+
+```bash
+grep -rn "loadSettings\|saveSettings\|STORAGE_KEY" packages/web/src
+```
+
+Expected: no matches. If anything matches, do not delete — fix the consumer first.
+
+- [ ] **Step 2: Run the complete check suite**
 
 Run: `bun run typecheck && bun run lint && bun run test`
-Expected: PASS — typecheck clean, Biome clean, all server + web tests green (`vitest` passes with no web tests).
+Expected: PASS — typecheck clean, Biome clean, all server + web tests green (`vitest` passes with no web tests). If the server suite shows spurious 401s on a hot DB, wipe it first (`rm -f packages/server/data/test-all.db*`) and run once.
 
 - [ ] **Step 2: Manual smoke test (optional but recommended)**
 
