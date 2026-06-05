@@ -177,3 +177,33 @@ export const ReprocessRequestSchema = z
 
 export const BatchDeleteRequestSchema = z.object({ ids: z.array(z.string().uuid()) });
 export const ApiKeyCreateRequestSchema = z.object({ name: z.string().optional() });
+
+export const SettingsSchema = z
+  .object({
+    backend: z.enum([
+      "pipeline",
+      "vlm-auto-engine",
+      "hybrid-auto-engine",
+      "vlm-http-client",
+      "hybrid-http-client",
+    ]),
+    lang: z.enum(["ch", "en", "japan", "korean", "latin", "arabic", "cyrillic", "devanagari"]),
+    parse_method: z.enum(["auto", "ocr", "txt"]),
+    formula_enable: z.boolean(),
+    table_enable: z.boolean(),
+    auto_rotate: z.boolean(),
+    mineru_url: z.string(),
+  })
+  .openapi("Settings");
+
+export type Settings = z.infer<typeof SettingsSchema>;
+
+export const DEFAULT_SETTINGS: Settings = {
+  backend: "hybrid-auto-engine",
+  lang: "ch",
+  parse_method: "auto",
+  formula_enable: true,
+  table_enable: true,
+  auto_rotate: false,
+  mineru_url: "",
+};
