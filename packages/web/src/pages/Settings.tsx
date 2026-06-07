@@ -14,8 +14,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { type ApiKey, createApiKey, listApiKeys, revokeApiKey } from "../api.ts";
-import { BACKENDS, LANGS, PARSE_METHODS } from "../settings.ts";
 import { useSettings } from "../SettingsContext.tsx";
+import { BACKENDS, LANGS, PARSE_METHODS } from "../settings.ts";
 
 interface SettingRowProps {
   name: string;
