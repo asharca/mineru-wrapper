@@ -3,36 +3,18 @@ services:
     build: .
     environment:
       - MINERU_URL=http://10.0.10.2:8001
-      - PADDLEOCR_URL=http://paddleocr:8000
       - DB_PATH=/app/data/ocr.db
       - PORT=3001
     volumes:
       - ocr-data:/app/data
       - ocr-uploads:/app/uploads
     restart: unless-stopped
-    depends_on:
-      paddleocr:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
-
-  paddleocr:
-    build:
-      context: ./packages/paddleocr
-      dockerfile: Dockerfile
-    environment:
-      - PORT=8000
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
 volumes:
   ocr-data:

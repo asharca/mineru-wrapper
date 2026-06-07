@@ -5,7 +5,6 @@ services:
   #     - "3002:3001"
   #   environment:
   #     - MINERU_URL=http://10.0.10.2:8001
-  #     - PADDLEOCR_URL=http://paddleocr:8000
   #     - DB_PATH=/app/data/ocr.db
   #     - PORT=3001
   #     - BETTER_AUTH_URL=http://localhost:3002
@@ -13,24 +12,6 @@ services:
   #     - ocr-data:/app/data
   #     - ocr-uploads:/app/uploads
   #   restart: unless-stopped
-  #   depends_on:
-  #     - paddleocr
-
-  paddleocr:
-    build:
-      context: ./packages/paddleocr
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - PORT=8000
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
 volumes:
   ocr-data:

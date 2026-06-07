@@ -112,7 +112,6 @@ uploadApp.openapi(uploadRoute, async (c) => {
     parse_method: body["parse_method"] ? String(body["parse_method"]) : undefined,
     formula_enable: body["formula_enable"] !== "false",
     table_enable: body["table_enable"] !== "false",
-    auto_rotate: body["auto_rotate"] === "true",
     mineru_url: body["mineru_url"]
       ? String(body["mineru_url"])
       : getUserSettings(userId)?.mineru_url || undefined,
@@ -217,7 +216,6 @@ uploadApp.openapi(parseAsyncRoute, async (c) => {
     table_enable: body["table_enable"] !== "false",
     start_page_id: body["start_page_id"] ? Number(body["start_page_id"]) : undefined,
     end_page_id: body["end_page_id"] ? Number(body["end_page_id"]) : undefined,
-    auto_rotate: body["auto_rotate"] === "true",
     mineru_url: body["mineru_url"]
       ? String(body["mineru_url"])
       : getUserSettings(userId)?.mineru_url || undefined,
@@ -336,7 +334,6 @@ uploadApp.openapi(parseSyncRoute, async (c) => {
     table_enable: body["table_enable"] !== "false",
     start_page_id: body["start_page_id"] ? Number(body["start_page_id"]) : undefined,
     end_page_id: body["end_page_id"] ? Number(body["end_page_id"]) : undefined,
-    auto_rotate: body["auto_rotate"] === "true",
     mineru_url: body["mineru_url"]
       ? String(body["mineru_url"])
       : getUserSettings(userId)?.mineru_url || undefined,

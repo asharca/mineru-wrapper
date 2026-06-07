@@ -29,7 +29,6 @@ export interface OcrSettings {
   parse_method: string;
   formula_enable: boolean;
   table_enable: boolean;
-  auto_rotate: boolean;
   mineru_url: string;
 }
 
@@ -39,6 +38,5 @@ export const DEFAULTS: OcrSettings = {
   parse_method: "auto",
   formula_enable: true,
   table_enable: true,
-  auto_rotate: false,
   mineru_url: "",
 };

@@ -51,7 +51,6 @@ export interface UploadOptions {
   parse_method?: string;
   formula_enable?: boolean;
   table_enable?: boolean;
-  auto_rotate?: boolean;
   mineru_url?: string;
 }
 
@@ -76,7 +75,6 @@ export async function uploadFile(file: File, options: UploadOptions): Promise<{ 
   if (options.formula_enable !== undefined)
     form.append("formula_enable", String(options.formula_enable));
   if (options.table_enable !== undefined) form.append("table_enable", String(options.table_enable));
-  if (options.auto_rotate) form.append("auto_rotate", "true");
   if (options.mineru_url) form.append("mineru_url", options.mineru_url);
 
   const res = await apiFetch("/upload", { method: "POST", body: form });
@@ -142,7 +140,6 @@ export interface ReprocessOptions {
   parse_method?: string;
   formula_enable?: boolean;
   table_enable?: boolean;
-  auto_rotate?: boolean;
   mineru_url?: string;
 }
 

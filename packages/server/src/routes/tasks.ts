@@ -334,7 +334,6 @@ tasksApp.openapi(reprocessRoute, async (c) => {
     parse_method: body.parse_method || undefined,
     formula_enable: body.formula_enable ?? true,
     table_enable: body.table_enable ?? true,
-    auto_rotate: body.auto_rotate ?? false,
     mineru_url: body.mineru_url || getUserSettings(userId)?.mineru_url || undefined,
   };
 

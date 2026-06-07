@@ -122,7 +122,6 @@ export const UploadRequestSchema = z
     parse_method: z.enum(["auto", "ocr", "txt"]).optional(),
     formula_enable: z.enum(["true", "false"]).optional(),
     table_enable: z.enum(["true", "false"]).optional(),
-    auto_rotate: z.enum(["true", "false"]).optional(),
     mineru_url: z.string().optional(),
   })
   .openapi("UploadRequest", {
@@ -147,7 +146,6 @@ export const ApiParseRequestSchema = z
     table_enable: z.enum(["true", "false"]).optional(),
     start_page_id: z.string().optional(),
     end_page_id: z.string().optional(),
-    auto_rotate: z.enum(["true", "false"]).optional(),
     mineru_url: z.string().optional(),
   })
   .openapi("ApiParseRequest");
@@ -170,7 +168,6 @@ export const ReprocessRequestSchema = z
     parse_method: z.string().optional(),
     formula_enable: z.boolean().optional(),
     table_enable: z.boolean().optional(),
-    auto_rotate: z.boolean().optional(),
     mineru_url: z.string().optional(),
   })
   .openapi("ReprocessRequest");
@@ -191,7 +188,6 @@ export const SettingsSchema = z
     parse_method: z.enum(["auto", "ocr", "txt"]),
     formula_enable: z.boolean(),
     table_enable: z.boolean(),
-    auto_rotate: z.boolean(),
     mineru_url: z.string(),
   })
   .openapi("Settings");
@@ -204,6 +200,5 @@ export const DEFAULT_SETTINGS: Settings = {
   parse_method: "auto",
   formula_enable: true,
   table_enable: true,
-  auto_rotate: false,
   mineru_url: "",
 };

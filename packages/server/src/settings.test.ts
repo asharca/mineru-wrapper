@@ -36,7 +36,6 @@ describe("User Settings", () => {
     parse_method: "ocr",
     formula_enable: false,
     table_enable: false,
-    auto_rotate: true,
     mineru_url: "http://example.test:9000",
   };
 

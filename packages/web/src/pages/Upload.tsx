@@ -1,10 +1,9 @@
-import { FileUp, Loader2, RotateCcw, Upload } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { FileUp, Loader2, Upload } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { uploadFile } from "../api.ts";
 import { useSettings } from "../SettingsContext.tsx";
 
@@ -13,11 +12,6 @@ export default function UploadPage() {
   const { settings, loading } = useSettings();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const [autoRotate, setAutoRotate] = useState(false);
-
-  useEffect(() => {
-    setAutoRotate(settings.auto_rotate);
-  }, [settings.auto_rotate]);
 
   const onDrop = useCallback(
     async (files: File[]) => {
@@ -31,7 +25,6 @@ export default function UploadPage() {
           parse_method: settings.parse_method === "auto" ? undefined : settings.parse_method,
           formula_enable: settings.formula_enable,
           table_enable: settings.table_enable,
-          auto_rotate: autoRotate,
           mineru_url: settings.mineru_url || undefined,
         });
         navigate(`/task/${result.id}`);
@@ -41,7 +34,7 @@ export default function UploadPage() {
         setUploading(false);
       }
     },
-    [navigate, autoRotate, settings],
+    [navigate, settings],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -113,21 +106,6 @@ export default function UploadPage() {
           </div>
         </CardContent>
       </Card>
-
-      <div className="flex items-center gap-2 mt-4 px-1">
-        <Checkbox
-          id="upload-auto-rotate"
-          checked={autoRotate}
-          onCheckedChange={(v) => setAutoRotate(Boolean(v))}
-        />
-        <label
-          htmlFor="upload-auto-rotate"
-          className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          Auto rotate document
-        </label>
-      </div>
 
       {error && (
         <Alert variant="destructive" className="mt-4">

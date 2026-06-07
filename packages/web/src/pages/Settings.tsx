@@ -230,33 +230,6 @@ export default function SettingsPage() {
           </Card>
         </div>
 
-        {/* Preprocessing */}
-        <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-            Preprocessing
-          </h3>
-          <Card>
-            <CardContent className="px-5 py-1">
-              <SettingRow
-                name="Auto Rotate"
-                hint="Detect and correct image orientation via MineRU probing"
-                htmlFor="auto-rotate"
-              >
-                <div className="flex items-center gap-3">
-                  <Switch
-                    id="auto-rotate"
-                    checked={settings.auto_rotate}
-                    onCheckedChange={(v) => update("auto_rotate", v)}
-                  />
-                  <span className="text-xs text-muted-foreground w-8">
-                    {settings.auto_rotate ? "On" : "Off"}
-                  </span>
-                </div>
-              </SettingRow>
-            </CardContent>
-          </Card>
-        </div>
-
         {/* Features */}
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">

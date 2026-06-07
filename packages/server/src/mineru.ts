@@ -1,6 +1,5 @@
 import { dirname, extname, join } from "node:path";
 import { mkdirSync } from "fs";
-import * as mupdf from "mupdf";
 import { degrees, PDFDocument } from "pdf-lib";
 import sharp from "sharp";
 import { v4 as uuid } from "uuid";
@@ -21,7 +20,6 @@ export function applyImageUrls(
 }
 
 const DEFAULT_MINERU_URL = process.env.MINERU_URL || "http://10.0.10.2:8001";
-const PADDLEOCR_URL = process.env.PADDLEOCR_URL || "http://localhost:8000";
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif"]);
 
@@ -33,7 +31,6 @@ export interface ParseOptions {
   table_enable?: boolean;
   start_page_id?: number;
   end_page_id?: number;
-  auto_rotate?: boolean;
   mineru_url?: string;
   onProgress?: (progress: { state: string; message?: string }) => void;
 }
@@ -43,157 +40,6 @@ export interface ParseResult {
   contentList: ContentBlock[];
   pages: { width: number; height: number }[];
   raw: unknown;
-}
-
-/** Max dimension for probe thumbnails */
-const PROBE_MAX = 800;
-
-/** Timeout for PaddleOCR service: 30s base + 15s per image */
-function paddleTimeoutMs(count: number): number {
-  return Math.max(30000, count * 15000);
-}
-
-/**
- * Detect best rotation angles for a batch of images via the PaddleOCR HTTP service.
- * Sends binary image data; no local file paths needed.
- */
-async function detectRotationsHttp(imageBuffers: Buffer[]): Promise<number[]> {
-  if (imageBuffers.length === 0) return [];
-
-  const form = new FormData();
-  for (const [i, buf] of imageBuffers.entries()) {
-    const blob = new Blob([buf], { type: "image/png" });
-    form.append("files", blob, `probe_${i}.png`);
-  }
-
-  try {
-    const res = await fetch(`${PADDLEOCR_URL}/detect`, {
-      method: "POST",
-      body: form,
-      signal: AbortSignal.timeout(paddleTimeoutMs(imageBuffers.length)),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      logger.error("[auto-rotate] PaddleOCR service error", { status: res.status, body: text });
-      return imageBuffers.map(() => 0);
-    }
-
-    const json = (await res.json()) as { angles?: number[] };
-    if (Array.isArray(json.angles) && json.angles.length === imageBuffers.length) {
-      return json.angles;
-    }
-    logger.error("[auto-rotate] Unexpected PaddleOCR response", { json });
-    return imageBuffers.map(() => 0);
-  } catch (e) {
-    logger.error("[auto-rotate] PaddleOCR request failed", { error: String(e) });
-    return imageBuffers.map(() => 0);
-  }
-}
-
-/**
- * Auto-rotate an image:
- * 1. Apply EXIF rotation via sharp
- * 2. Send thumbnail to PaddleOCR service for direction detection
- * 3. Rotate original image if needed
- */
-async function autoRotateImage(filePath: string): Promise<void> {
-  const buf = await Bun.file(filePath).arrayBuffer();
-  // Step 1: Apply EXIF rotation
-  let corrected = await sharp(Buffer.from(buf)).rotate().toBuffer();
-
-  // Step 2: Create thumbnail for direction detection
-  const meta = await sharp(corrected).metadata();
-  let thumb = corrected;
-  if ((meta.width ?? 0) > PROBE_MAX || (meta.height ?? 0) > PROBE_MAX) {
-    thumb = await sharp(corrected)
-      .resize({ width: PROBE_MAX, height: PROBE_MAX, fit: "inside" })
-      .png()
-      .toBuffer();
-  }
-
-  const [angle = 0] = await detectRotationsHttp([thumb]);
-  logger.info("[auto-rotate] image", { angle });
-
-  // Step 3: Rotate original image if needed
-  if (angle > 0) {
-    corrected = await sharp(corrected).rotate(angle).toBuffer();
-    await Bun.write(filePath, corrected);
-  }
-}
-
-/** Scale factor for PDF rendering: 200 DPI (200/72 ≈ 2.78x) */
-const PDF_RENDER_SCALE = 200 / 72;
-
-/**
- * Render a PDF page to PNG buffer using mupdf WASM at 200 DPI.
- */
-function renderPdfPageToImage(pdfBytes: ArrayBuffer, pageIndex: number): Buffer {
-  const doc = mupdf.Document.openDocument(pdfBytes, "application/pdf");
-  const page = doc.loadPage(pageIndex);
-  const matrix = mupdf.Matrix.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE);
-  const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
-  const png = pixmap.asPNG();
-  return Buffer.from(png);
-}
-
-/**
- * Auto-rotate a scanned PDF:
- * 1. Render each page to image via mupdf
- * 2. Send all page images to PaddleOCR service for per-page direction detection
- * 3. Apply rotation via pdf-lib metadata (setRotation), preserving vector quality
- */
-async function autoRotatePdf(filePath: string): Promise<void> {
-  const pdfBytes = await Bun.file(filePath).arrayBuffer();
-  const doc = mupdf.Document.openDocument(pdfBytes, "application/pdf");
-  const numPages = doc.countPages();
-
-  // Step 1: Render all pages to PNG buffers for angle detection
-  const pageBuffers: Buffer[] = [];
-  for (let i = 0; i < numPages; i++) {
-    pageBuffers.push(renderPdfPageToImage(pdfBytes, i));
-  }
-
-  // Step 2: Detect best angle for each page independently
-  const angles = await detectRotationsHttp(pageBuffers);
-
-  const needsRotation = angles.some((a) => a !== 0);
-  if (!needsRotation) {
-    logger.info("[auto-rotate] pdf: no rotation needed");
-    return;
-  }
-
-  logger.info("[auto-rotate] pdf page angles", {
-    angles: angles.map((a, i) => `p${i + 1}=${a}°`).join(", "),
-  });
-
-  // Step 3: Apply rotation via pdf-lib metadata (unified with manual rotate)
-  const srcPdf = await PDFDocument.load(pdfBytes);
-  for (let i = 0; i < numPages; i++) {
-    const angle = angles[i] ?? 0;
-    if (angle !== 0) {
-      const page = srcPdf.getPage(i);
-      page.setRotation(degrees(angle));
-      logger.info("[auto-rotate] pdf page rotation set", { page: i + 1, total: numPages, angle });
-    }
-  }
-
-  const rotatedBytes = await srcPdf.save();
-  await Bun.write(filePath, rotatedBytes);
-}
-
-/**
- * Auto-rotate entry point: handles both images and PDFs.
- * Office files (.docx, .xlsx, .pptx) and CSV are skipped.
- */
-async function autoRotateFile(filePath: string): Promise<void> {
-  const ext = extname(filePath).toLowerCase();
-  if (IMAGE_EXTS.has(ext)) {
-    await autoRotateImage(filePath);
-  } else if (ext === ".pdf") {
-    await autoRotatePdf(filePath);
-  }
-  // .xlsx, .xls, .docx, .pptx, .csv — no rotation needed
 }
 
 /**
@@ -438,10 +284,6 @@ export async function parseFile(
   options: ParseOptions = {},
 ): Promise<ParseResult> {
   const mineruUrl = options.mineru_url || DEFAULT_MINERU_URL;
-
-  if (options.auto_rotate) {
-    await autoRotateFile(filePath);
-  }
 
   const form = buildForm(filePath, originalName, options);
   const json = await submitAndPoll(mineruUrl, form, options.onProgress);

@@ -8,7 +8,6 @@
 - 🚀 **异步 & 同步接口**：支持提交任务后轮询结果，也支持直接同步等待
 - 🌐 **Web 管理界面**：可视化上传文件、查看任务进度与结果
 - 🔁 **文件去重缓存**：相同文件（SHA-256 哈希）自动复用已有结果，无需重复解析
-- 🔄 **自动旋转纠偏**：通过 MineRU 四方向探测，自动识别并修正扫描件方向（支持图片与 PDF）
 - 📐 **公式 & 表格识别**：可开关的公式、表格结构化提取
 - 📝 **Markdown 输出**：结果以 Markdown 格式返回，图片内联为 Base64
 - 📚 **OpenAPI 文档**：内置 Swagger UI 与 Scalar API Reference
@@ -21,7 +20,7 @@
 | 运行时 | [Bun](https://bun.sh) |
 | 后端框架 | [Hono](https://hono.dev) + Zod OpenAPI |
 | 数据库 | Bun SQLite (WAL 模式) |
-| PDF 渲染 | [MuPDF WASM](https://mupdf.com) + [pdf-lib](https://pdf-lib.js.org) |
+| PDF 渲染 | [pdf-lib](https://pdf-lib.js.org) |
 | 图像处理 | [Sharp](https://sharp.pixelplumbing.com) |
 | 前端 | React 19 + Vite + Tailwind CSS v4 |
 | 容器化 | Docker + Docker Compose |
@@ -136,7 +135,6 @@ lang=ch                   # ch | en | japan | korean | latin | arabic | cyrillic
 parse_method=auto         # auto | ocr | txt
 formula_enable=true
 table_enable=true
-auto_rotate=false
 ```
 
 返回任务 ID，通过 `GET /tasks/{id}` 轮询结果。
@@ -152,7 +150,6 @@ backend=pipeline
 lang_list=ch              # 可多次传递以指定多语言
 start_page_id=0           # 起始页（0-indexed）
 end_page_id=5             # 结束页（0-indexed）
-auto_rotate=false
 mineru_url=http://...     # 可覆盖默认 MineRU 地址
 ```
 
@@ -220,7 +217,7 @@ mineru-wrapper/
 │   │   ├── index.ts        # 入口：Hono 服务器 + 静态文件服务
 │   │   └── src/
 │   │       ├── routes.ts   # 全部 API 路由与 OpenAPI 定义
-│   │       ├── mineru.ts   # MineRU 调用、自动旋转逻辑
+│   │       ├── mineru.ts   # MineRU 调用与手动旋转
 │   │       └── db.ts       # SQLite 数据库与预编译语句
 │   └── web/                # 前端（React + Vite）
 │       └── src/
@@ -229,15 +226,6 @@ mineru-wrapper/
 │           └── api.ts      # 前端 API 调用封装
 └── DOCKER.md               # Docker 部署文档
 ```
-
-## 自动旋转说明
-
-启用 `auto_rotate=true` 时，服务会在提交给 MineRU 前对文件进行预处理：
-
-1. **图片**：先通过 Sharp 修正 EXIF 方向，再将缩略图发送给 PaddleOCR 方向分类服务检测最佳角度，然后旋转原图。
-2. **PDF**：逐页渲染为图片（200 DPI）发送给 PaddleOCR 进行每页方向检测；若需旋转，则通过 pdf-lib 设置页面旋转元数据（`setRotation`），保持矢量质量和文本可选中。
-
-> **注意**：自动旋转需要 PaddleOCR 服务（`paddleocr` 容器）运行，会略微增加处理时间。对于方向固定的文档，建议关闭此功能。
 
 ## 文件去重
 
