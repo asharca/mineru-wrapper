@@ -22,8 +22,7 @@ function DropdownMenuContent({
   sideOffset = 6,
   children,
   ...props
-}: MenuPrimitive.Popup.Props &
-  Pick<MenuPrimitive.Positioner.Props, "align" | "sideOffset">) {
+}: MenuPrimitive.Popup.Props & Pick<MenuPrimitive.Positioner.Props, "align" | "sideOffset">) {
   return (
     <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner align={align} sideOffset={sideOffset} className="z-50">
