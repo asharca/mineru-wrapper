@@ -1,8 +1,16 @@
-import { BookOpen, FileText, History, LogOut, Settings, Upload, User } from "lucide-react";
+import { BookOpen, ChevronDown, FileText, History, LogOut, Settings, Upload } from "lucide-react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import HistoryPage from "./pages/History.tsx";
@@ -26,26 +34,39 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return children;
 }
 
+function UserMenu({ email, onLogout }: { email: string; onLogout: () => void }) {
+  const initial = email.charAt(0).toUpperCase();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg border border-border bg-background/60 px-2 py-1 text-sm transition-colors hover:bg-muted aria-expanded:bg-muted">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-primary to-chart-5 text-xs font-semibold text-primary-foreground">
+          {initial}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuLabel>{email}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => window.open("/docs", "_blank", "noopener,noreferrer")}>
+          <BookOpen />
+          API Docs
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onLogout}>
+          <LogOut />
+          Logout
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function AuthHeader() {
   const { user, logout } = useAuth();
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
+      <ThemeToggle />
       {user ? (
-        <>
-          <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-            <User className="h-3.5 w-3.5" />
-            {user.email}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-muted-foreground"
-            onClick={logout}
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Button>
-        </>
+        <UserMenu email={user.email} onLogout={logout} />
       ) : (
         <NavLink to="/login">
           <Button variant="ghost" size="sm">
@@ -53,13 +74,6 @@ function AuthHeader() {
           </Button>
         </NavLink>
       )}
-      <ThemeToggle />
-      <a href="/docs" target="_blank" rel="noreferrer">
-        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
-          <BookOpen className="h-4 w-4" />
-          API Docs
-        </Button>
-      </a>
     </div>
   );
 }
