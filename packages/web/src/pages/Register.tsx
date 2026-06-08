@@ -3,43 +3,26 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
+  const { loading, error, submit } = useFormSubmit();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      await register(email, password, name);
-      navigate("/");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const onSubmit = submit(async () => {
+    if (password !== confirmPassword) throw new Error("Passwords do not match");
+    if (password.length < 8) throw new Error("Password must be at least 8 characters");
+    await register(email, password, name);
+    navigate("/");
+  });
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -48,9 +31,8 @@ export default function RegisterPage() {
           <CardTitle>Create Account</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name (optional)</Label>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <FormField label="Name (optional)" htmlFor="name">
               <Input
                 id="name"
                 type="text"
@@ -58,9 +40,8 @@ export default function RegisterPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+            </FormField>
+            <FormField label="Email" htmlFor="email">
               <Input
                 id="email"
                 type="email"
@@ -69,9 +50,8 @@ export default function RegisterPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+            </FormField>
+            <FormField label="Password" htmlFor="password">
               <Input
                 id="password"
                 type="password"
@@ -80,9 +60,8 @@ export default function RegisterPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
+            </FormField>
+            <FormField label="Confirm Password" htmlFor="confirm-password">
               <Input
                 id="confirm-password"
                 type="password"
@@ -91,15 +70,15 @@ export default function RegisterPage() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
               />
-            </div>
+            </FormField>
             {error && (
               <div className="flex items-center gap-2 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4" />
                 {error}
               </div>
             )}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Creating account..." : "Sign Up"}
+            <Button type="submit" className="w-full" loading={loading}>
+              Sign Up
             </Button>
             <p className="text-sm text-muted-foreground text-center">
               Already have an account?{" "}

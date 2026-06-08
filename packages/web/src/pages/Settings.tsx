@@ -288,8 +288,8 @@ export default function SettingsPage() {
                   onChange={(e) => setNewKeyName(e.target.value)}
                   className="min-w-[200px]"
                 />
-                <Button onClick={handleCreateKey} disabled={apiKeyLoading} className="gap-1.5">
-                  <KeyRound className="h-4 w-4" />
+                <Button onClick={handleCreateKey} loading={apiKeyLoading} className="gap-1.5">
+                  {!apiKeyLoading && <KeyRound className="h-4 w-4" />}
                   Create Key
                 </Button>
               </div>
