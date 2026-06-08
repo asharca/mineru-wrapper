@@ -46,3 +46,6 @@ demo.png_files/
 
 # IDE
 .vscode/
+
+# Visual Companion brainstorm sessions
+.superpowers/
