@@ -246,5 +246,32 @@ describe("API Keys", () => {
       // userB has no tasks - should return empty list, not userA's tasks
       expect(tasks.length).toBe(0);
     });
+
+    it("a revoked API key is rejected on subsequent requests", async () => {
+      // Create a fresh key
+      const { key } = await createKey(userACookie, "to-be-revoked");
+
+      // Verify it works first
+      const ok = await app.request("/tasks", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      expect(ok.status).toBe(200);
+
+      // Find the key's id and revoke it
+      const keys = await listKeys(userACookie);
+      const target = keys.find((k) => k.name === "to-be-revoked");
+      if (!target) throw new Error("Just-created key missing from list");
+      const revokeRes = await app.request(`/api/api-keys/${target.id}`, {
+        method: "DELETE",
+        headers: authHeader(userACookie),
+      });
+      expect(revokeRes.status).toBe(200);
+
+      // Same key should now be rejected
+      const after = await app.request("/tasks", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      expect(after.status).toBe(401);
+    });
   });
 });
