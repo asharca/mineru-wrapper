@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
-import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import { Input } from "@/components/ui/input";
+import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import {
   Table,
   TableBody,
@@ -286,9 +286,7 @@ export default function HistoryPage() {
           icon={Inbox}
           title={search ? "No results found" : "No records yet"}
           description={
-            search
-              ? `Nothing matched "${search}"`
-              : "Upload a document and it will appear here"
+            search ? `Nothing matched "${search}"` : "Upload a document and it will appear here"
           }
         />
       ) : (
