@@ -23,8 +23,7 @@ describe("MineRU upstream failure → task failed", () => {
         name: "mineru-fail",
       }),
     });
-    cookie =
-      res.headers.get("set-cookie")?.match(/better-auth\.session_token=([^;]+)/)?.[1] ?? "";
+    cookie = res.headers.get("set-cookie")?.match(/better-auth\.session_token=([^;]+)/)?.[1] ?? "";
   });
 
   it("marks the task as failed when upstream fetch errors", async () => {
