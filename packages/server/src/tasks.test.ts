@@ -137,6 +137,19 @@ describe("Upload & Tasks API", () => {
       expect(res.status).toBe(400);
     });
 
+    it("rejects unsupported file types on /api/parse", async () => {
+      const form = new FormData();
+      form.append("file", new File(["txt"], "x.exe", { type: "application/octet-stream" }));
+      const res = await app.request("/api/parse", {
+        method: "POST",
+        body: form,
+        headers: { Cookie: `better-auth.session_token=${cookie}` },
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("Unsupported file type");
+    });
+
     it("creates a pending task with source=api", async () => {
       const form = new FormData();
       form.append("file", new File(["pdf"], "api.pdf", { type: "application/pdf" }));
@@ -179,6 +192,19 @@ describe("Upload & Tasks API", () => {
         headers: { Cookie: `better-auth.session_token=${cookie}` },
       });
       expect(res.status).toBe(400);
+    });
+
+    it("rejects unsupported file types on /api/parse/sync", async () => {
+      const form = new FormData();
+      form.append("file", new File(["txt"], "x.exe", { type: "application/octet-stream" }));
+      const res = await app.request("/api/parse/sync", {
+        method: "POST",
+        body: form,
+        headers: { Cookie: `better-auth.session_token=${cookie}` },
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("Unsupported file type");
     });
   });
 
@@ -280,6 +306,13 @@ describe("Upload & Tasks API", () => {
       });
       expect(res.status).toBe(404);
     });
+
+    it("returns 400 for malformed (non-UUID) id", async () => {
+      const res = await app.request("/tasks/not-a-uuid", {
+        headers: { Cookie: `better-auth.session_token=${cookie}` },
+      });
+      expect(res.status).toBe(400);
+    });
   });
 
   // ── PATCH /tasks/:id ──────────────────────────────────────────────────────
@@ -354,6 +387,41 @@ describe("Upload & Tasks API", () => {
           Cookie: `better-auth.session_token=${cookie}`,
         },
         body: JSON.stringify({ result_md: "text" }),
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 when patching another user's task", async () => {
+      // Register a second user and upload a task as them
+      const otherEmail = `other-patch-${Date.now()}@example.com`;
+      const signUp = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: otherEmail, password: "password123", name: otherEmail }),
+      });
+      const otherCookie =
+        signUp.headers.get("set-cookie")?.match(/better-auth\.session_token=([^;]+)/)?.[1] ?? "";
+
+      const form = new FormData();
+      form.append(
+        "file",
+        new File(["other-user-payload"], "other.pdf", { type: "application/pdf" }),
+      );
+      const upRes = await app.request("/upload", {
+        method: "POST",
+        body: form,
+        headers: { Cookie: `better-auth.session_token=${otherCookie}` },
+      });
+      const { id: otherTaskId } = (await upRes.json()) as { id: string };
+
+      // Original cookie tries to PATCH the other user's task
+      const res = await app.request(`/tasks/${otherTaskId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `better-auth.session_token=${cookie}`,
+        },
+        body: JSON.stringify({ result_md: "hijacked" }),
       });
       expect(res.status).toBe(404);
     });
@@ -483,6 +551,76 @@ describe("Upload & Tasks API", () => {
           Cookie: `better-auth.session_token=${cookie}`,
         },
         body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 when reprocessing another user's task", async () => {
+      const otherEmail = `other-reproc-${Date.now()}@example.com`;
+      const signUp = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: otherEmail, password: "password123", name: otherEmail }),
+      });
+      const otherCookie =
+        signUp.headers.get("set-cookie")?.match(/better-auth\.session_token=([^;]+)/)?.[1] ?? "";
+
+      const form = new FormData();
+      form.append(
+        "file",
+        new File(["other-user-payload"], "other-r.pdf", { type: "application/pdf" }),
+      );
+      const upRes = await app.request("/upload", {
+        method: "POST",
+        body: form,
+        headers: { Cookie: `better-auth.session_token=${otherCookie}` },
+      });
+      const { id: otherTaskId } = (await upRes.json()) as { id: string };
+
+      const res = await app.request(`/tasks/${otherTaskId}/reprocess`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `better-auth.session_token=${cookie}`,
+        },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // ── GET /files/:filename isolation ────────────────────────────────────────
+
+  describe("GET /files/:filename isolation", () => {
+    it("cannot fetch another user's uploaded file", async () => {
+      const otherEmail = `other-files-${Date.now()}@example.com`;
+      const signUp = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: otherEmail, password: "password123", name: otherEmail }),
+      });
+      const otherCookie =
+        signUp.headers.get("set-cookie")?.match(/better-auth\.session_token=([^;]+)/)?.[1] ?? "";
+
+      const form = new FormData();
+      form.append(
+        "file",
+        new File(["payload-files"], "files-iso.pdf", { type: "application/pdf" }),
+      );
+      const upRes = await app.request("/upload", {
+        method: "POST",
+        body: form,
+        headers: { Cookie: `better-auth.session_token=${otherCookie}` },
+      });
+      const { id: otherTaskId } = (await upRes.json()) as { id: string };
+
+      const detailRes = await app.request(`/tasks/${otherTaskId}`, {
+        headers: { Cookie: `better-auth.session_token=${otherCookie}` },
+      });
+      const { filename: otherFilename } = (await detailRes.json()) as { filename: string };
+
+      const res = await app.request(`/files/${otherFilename}`, {
+        headers: { Cookie: `better-auth.session_token=${cookie}` },
       });
       expect(res.status).toBe(404);
     });

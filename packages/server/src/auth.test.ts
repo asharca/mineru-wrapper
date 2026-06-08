@@ -36,6 +36,53 @@ describe("Auth & Data Isolation", () => {
     expect([401, 404, 200]).toContain(res.status);
   });
 
+  it("should reject unauthenticated /api/parse", async () => {
+    const res = await app.request("/api/parse", { method: "POST" });
+    expect(res.status).toBe(401);
+  });
+
+  it("should reject unauthenticated /api/parse/sync", async () => {
+    const res = await app.request("/api/parse/sync", { method: "POST" });
+    expect(res.status).toBe(401);
+  });
+
+  it("should reject unauthenticated /tasks/batch-delete", async () => {
+    const res = await app.request("/tasks/batch-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: ["00000000-0000-0000-0000-000000000000"] }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("should reject unauthenticated POST /tasks/{id}/reprocess", async () => {
+    const res = await app.request("/tasks/00000000-0000-0000-0000-000000000000/reprocess", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("should reject unauthenticated PATCH /tasks/{id}", async () => {
+    const res = await app.request("/tasks/00000000-0000-0000-0000-000000000000", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ result_md: "x" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("should reject unauthenticated /files/{filename}", async () => {
+    const res = await app.request("/files/anything.pdf");
+    expect(res.status).toBe(401);
+  });
+
+  it("should reject unauthenticated /files/img/{filename}", async () => {
+    const res = await app.request("/files/img/anything.png");
+    expect(res.status).toBe(401);
+  });
+
   it("should register and login users", async () => {
     userA = { email: "usera@example.com", password: "password123" };
     userB = { email: "userb@example.com", password: "password123" };
@@ -134,5 +181,59 @@ describe("Auth & Data Isolation", () => {
     expect(listRes.status).toBe(200);
     const data = (await listRes.json()) as { tasks: unknown[] };
     expect(data.tasks.length).toBe(1);
+  });
+
+  it("rejects duplicate email on sign-up", async () => {
+    const email = `dup-${Date.now()}@example.com`;
+    const first = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "password123", name: email }),
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "password123", name: email }),
+    });
+    // better-auth returns a 4xx for duplicate user. Accept any 4xx.
+    expect(second.status).toBeGreaterThanOrEqual(400);
+    expect(second.status).toBeLessThan(500);
+  });
+
+  it("session cookie is rejected after sign-out", async () => {
+    const email = `signout-${Date.now()}@example.com`;
+
+    const signUp = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "password123", name: email }),
+    });
+    const cookie =
+      signUp.headers.get("set-cookie")?.match(/better-auth\.session_token=([^;]+)/)?.[1] ?? "";
+    expect(cookie).toBeTruthy();
+
+    // Verify cookie works
+    const before = await app.request("/tasks", {
+      headers: { Cookie: `better-auth.session_token=${cookie}` },
+    });
+    expect(before.status).toBe(200);
+
+    // Sign out
+    const out = await app.request("/api/auth/sign-out", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `better-auth.session_token=${cookie}`,
+      },
+    });
+    expect([200, 204]).toContain(out.status);
+
+    // Same cookie should now be rejected
+    const after = await app.request("/tasks", {
+      headers: { Cookie: `better-auth.session_token=${cookie}` },
+    });
+    expect(after.status).toBe(401);
   });
 });

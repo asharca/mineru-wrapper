@@ -214,6 +214,28 @@ describe("API Keys", () => {
       expect(res.status).toBe(401);
     });
 
+    it("rejects invalid Bearer on /api/parse", async () => {
+      const form = new FormData();
+      form.append("file", new File(["x"], "x.pdf", { type: "application/pdf" }));
+      const res = await app.request("/api/parse", {
+        method: "POST",
+        body: form,
+        headers: { Authorization: "Bearer mk_invalid_key_value" },
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("rejects invalid Bearer on /api/parse/sync", async () => {
+      const form = new FormData();
+      form.append("file", new File(["x"], "x.pdf", { type: "application/pdf" }));
+      const res = await app.request("/api/parse/sync", {
+        method: "POST",
+        body: form,
+        headers: { Authorization: "Bearer mk_invalid_key_value" },
+      });
+      expect(res.status).toBe(401);
+    });
+
     it("API key only sees its owner's tasks", async () => {
       const { key } = await createKey(userBCookie, "isolation-test");
       const res = await app.request("/tasks", {
@@ -223,6 +245,33 @@ describe("API Keys", () => {
       const { tasks } = (await res.json()) as { tasks: unknown[] };
       // userB has no tasks - should return empty list, not userA's tasks
       expect(tasks.length).toBe(0);
+    });
+
+    it("a revoked API key is rejected on subsequent requests", async () => {
+      // Create a fresh key
+      const { key } = await createKey(userACookie, "to-be-revoked");
+
+      // Verify it works first
+      const ok = await app.request("/tasks", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      expect(ok.status).toBe(200);
+
+      // Find the key's id and revoke it
+      const keys = await listKeys(userACookie);
+      const target = keys.find((k) => k.name === "to-be-revoked");
+      if (!target) throw new Error("Just-created key missing from list");
+      const revokeRes = await app.request(`/api/api-keys/${target.id}`, {
+        method: "DELETE",
+        headers: authHeader(userACookie),
+      });
+      expect(revokeRes.status).toBe(200);
+
+      // Same key should now be rejected
+      const after = await app.request("/tasks", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      expect(after.status).toBe(401);
     });
   });
 });
