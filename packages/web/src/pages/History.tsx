@@ -1,11 +1,13 @@
 import dayjs from "dayjs";
-import { AlertCircle, ChevronLeft, ChevronRight, Search, Trash2, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Inbox, Search, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -278,11 +280,17 @@ export default function HistoryPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-16 text-muted-foreground">Loading...</div>
+        <LoadingSkeleton rows={6} />
       ) : !data || tasks.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-          <p className="text-sm">{search ? `No results for "${search}"` : "No records yet"}</p>
-        </Card>
+        <EmptyState
+          icon={Inbox}
+          title={search ? "No results found" : "No records yet"}
+          description={
+            search
+              ? `Nothing matched "${search}"`
+              : "Upload a document and it will appear here"
+          }
+        />
       ) : (
         <>
           <Card>
