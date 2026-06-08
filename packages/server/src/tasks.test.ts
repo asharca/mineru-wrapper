@@ -306,6 +306,13 @@ describe("Upload & Tasks API", () => {
       });
       expect(res.status).toBe(404);
     });
+
+    it("returns 400 for malformed (non-UUID) id", async () => {
+      const res = await app.request("/tasks/not-a-uuid", {
+        headers: { Cookie: `better-auth.session_token=${cookie}` },
+      });
+      expect(res.status).toBe(400);
+    });
   });
 
   // ── PATCH /tasks/:id ──────────────────────────────────────────────────────
