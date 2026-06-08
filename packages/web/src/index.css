@@ -303,3 +303,13 @@
     transform: translateX(-100%);
   }
 }
+
+/* Allotment splitter visibility in dark mode.
+   CSS modules hash the class names per build; partial-class selectors
+   keep these rules stable across allotment versions. */
+.dark [class*="sash-module_sash__"]:hover {
+  background-color: var(--border);
+}
+.dark [class*="sash-module_active"] {
+  background-color: var(--primary);
+}
