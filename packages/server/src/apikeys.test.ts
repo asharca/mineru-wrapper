@@ -214,6 +214,28 @@ describe("API Keys", () => {
       expect(res.status).toBe(401);
     });
 
+    it("rejects invalid Bearer on /api/parse", async () => {
+      const form = new FormData();
+      form.append("file", new File(["x"], "x.pdf", { type: "application/pdf" }));
+      const res = await app.request("/api/parse", {
+        method: "POST",
+        body: form,
+        headers: { Authorization: "Bearer mk_invalid_key_value" },
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("rejects invalid Bearer on /api/parse/sync", async () => {
+      const form = new FormData();
+      form.append("file", new File(["x"], "x.pdf", { type: "application/pdf" }));
+      const res = await app.request("/api/parse/sync", {
+        method: "POST",
+        body: form,
+        headers: { Authorization: "Bearer mk_invalid_key_value" },
+      });
+      expect(res.status).toBe(401);
+    });
+
     it("API key only sees its owner's tasks", async () => {
       const { key } = await createKey(userBCookie, "isolation-test");
       const res = await app.request("/tasks", {
