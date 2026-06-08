@@ -48,7 +48,7 @@ export function BlockView({
           className={cn(
             "px-4 py-3 rounded-lg border transition-all",
             activeBlock === i
-              ? "bg-primary/5 border-primary/40 shadow-sm"
+              ? "bg-primary/5 ring-2 ring-primary/60 border-transparent"
               : "border-transparent hover:bg-muted/50",
           )}
           onMouseEnter={() => onBlockHover(i)}
