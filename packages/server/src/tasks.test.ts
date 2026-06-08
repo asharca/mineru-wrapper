@@ -137,6 +137,19 @@ describe("Upload & Tasks API", () => {
       expect(res.status).toBe(400);
     });
 
+    it("rejects unsupported file types on /api/parse", async () => {
+      const form = new FormData();
+      form.append("file", new File(["txt"], "x.exe", { type: "application/octet-stream" }));
+      const res = await app.request("/api/parse", {
+        method: "POST",
+        body: form,
+        headers: { Cookie: `better-auth.session_token=${cookie}` },
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("Unsupported file type");
+    });
+
     it("creates a pending task with source=api", async () => {
       const form = new FormData();
       form.append("file", new File(["pdf"], "api.pdf", { type: "application/pdf" }));
@@ -179,6 +192,19 @@ describe("Upload & Tasks API", () => {
         headers: { Cookie: `better-auth.session_token=${cookie}` },
       });
       expect(res.status).toBe(400);
+    });
+
+    it("rejects unsupported file types on /api/parse/sync", async () => {
+      const form = new FormData();
+      form.append("file", new File(["txt"], "x.exe", { type: "application/octet-stream" }));
+      const res = await app.request("/api/parse/sync", {
+        method: "POST",
+        body: form,
+        headers: { Cookie: `better-auth.session_token=${cookie}` },
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("Unsupported file type");
     });
   });
 
