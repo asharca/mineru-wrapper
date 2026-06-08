@@ -170,6 +170,34 @@
   color: oklch(0.55 0.15 230);
 }
 
+/* Block type tags — dark mode variants */
+.dark .block-type-title {
+  background-color: oklch(0.32 0.06 25);
+  color: oklch(0.85 0.15 25);
+}
+.dark .block-type-text {
+  background-color: oklch(0.32 0.05 260);
+  color: oklch(0.85 0.15 260);
+}
+.dark .block-type-table {
+  background-color: oklch(0.32 0.06 150);
+  color: oklch(0.85 0.13 150);
+}
+.dark .block-type-figure,
+.dark .block-type-image {
+  background-color: oklch(0.32 0.06 300);
+  color: oklch(0.85 0.15 300);
+}
+.dark .block-type-formula,
+.dark .block-type-interline_equation {
+  background-color: oklch(0.32 0.06 70);
+  color: oklch(0.85 0.13 70);
+}
+.dark .block-type-list {
+  background-color: oklch(0.32 0.05 230);
+  color: oklch(0.85 0.11 230);
+}
+
 /* Markdown rendered content */
 .rendered-md {
   font-size: 15px;
