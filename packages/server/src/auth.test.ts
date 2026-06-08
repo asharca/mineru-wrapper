@@ -201,4 +201,39 @@ describe("Auth & Data Isolation", () => {
     expect(second.status).toBeGreaterThanOrEqual(400);
     expect(second.status).toBeLessThan(500);
   });
+
+  it("session cookie is rejected after sign-out", async () => {
+    const email = `signout-${Date.now()}@example.com`;
+
+    const signUp = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "password123", name: email }),
+    });
+    const cookie =
+      signUp.headers.get("set-cookie")?.match(/better-auth\.session_token=([^;]+)/)?.[1] ?? "";
+    expect(cookie).toBeTruthy();
+
+    // Verify cookie works
+    const before = await app.request("/tasks", {
+      headers: { Cookie: `better-auth.session_token=${cookie}` },
+    });
+    expect(before.status).toBe(200);
+
+    // Sign out
+    const out = await app.request("/api/auth/sign-out", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `better-auth.session_token=${cookie}`,
+      },
+    });
+    expect([200, 204]).toContain(out.status);
+
+    // Same cookie should now be rejected
+    const after = await app.request("/tasks", {
+      headers: { Cookie: `better-auth.session_token=${cookie}` },
+    });
+    expect(after.status).toBe(401);
+  });
 });
