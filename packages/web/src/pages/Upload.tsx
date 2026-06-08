@@ -2,8 +2,8 @@ import { FileUp, Loader2, Upload } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
 import { uploadFile } from "../api.ts";
 import { useSettings } from "../SettingsContext.tsx";
 
@@ -107,11 +107,7 @@ export default function UploadPage() {
         </CardContent>
       </Card>
 
-      {error && (
-        <Alert variant="destructive" className="mt-4">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      {error && <ErrorState className="mt-4" title="Upload failed" description={error} />}
     </div>
   );
 }
