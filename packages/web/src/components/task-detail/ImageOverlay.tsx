@@ -30,7 +30,7 @@ export function ImageOverlay({
 
   if (!imgSize)
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
+      <div className="flex h-full items-center justify-center bg-white text-muted-foreground">
         Loading image...
       </div>
     );
@@ -43,7 +43,8 @@ export function ImageOverlay({
   const fontSize = Math.round(Math.min(w, h) * 0.012);
 
   return (
-    <TransformWrapper minScale={0.5} maxScale={8} initialScale={1} centerZoomedOut>
+    <div className="h-full bg-white">
+      <TransformWrapper minScale={0.5} maxScale={8} initialScale={1} centerZoomedOut>
       <TransformComponent
         wrapperStyle={{ width: "100%", height: "100%", overflow: "auto" }}
         contentStyle={{ width: "100%", display: "flex", justifyContent: "center" }}
@@ -115,5 +116,6 @@ export function ImageOverlay({
         </svg>
       </TransformComponent>
     </TransformWrapper>
+    </div>
   );
 }
