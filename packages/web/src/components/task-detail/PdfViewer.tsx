@@ -160,7 +160,7 @@ export function PdfViewer({
         </div>
       )}
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto bg-white">
         <Document
           file={src}
           onLoadSuccess={onDocumentLoadSuccess}
