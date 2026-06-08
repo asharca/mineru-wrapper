@@ -2,8 +2,8 @@ import { FileUp, Loader2, Upload } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
-import { ErrorState } from "@/components/ui/error-state";
 import { Card, CardContent } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
 import { uploadFile } from "../api.ts";
 import { useSettings } from "../SettingsContext.tsx";
 
