@@ -1,8 +1,6 @@
 import { BookOpen, ChevronDown, FileText, History, LogOut, Settings, Upload } from "lucide-react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Separator } from "@/components/ui/separator";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import HistoryPage from "./pages/History.tsx";
