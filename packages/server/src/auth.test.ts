@@ -182,4 +182,23 @@ describe("Auth & Data Isolation", () => {
     const data = (await listRes.json()) as { tasks: unknown[] };
     expect(data.tasks.length).toBe(1);
   });
+
+  it("rejects duplicate email on sign-up", async () => {
+    const email = `dup-${Date.now()}@example.com`;
+    const first = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "password123", name: email }),
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "password123", name: email }),
+    });
+    // better-auth returns a 4xx for duplicate user. Accept any 4xx.
+    expect(second.status).toBeGreaterThanOrEqual(400);
+    expect(second.status).toBeLessThan(500);
+  });
 });
