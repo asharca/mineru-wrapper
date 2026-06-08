@@ -370,7 +370,10 @@ describe("Upload & Tasks API", () => {
         signUp.headers.get("set-cookie")?.match(/better-auth\.session_token=([^;]+)/)?.[1] ?? "";
 
       const form = new FormData();
-      form.append("file", new File(["other-user-payload"], "other.pdf", { type: "application/pdf" }));
+      form.append(
+        "file",
+        new File(["other-user-payload"], "other.pdf", { type: "application/pdf" }),
+      );
       const upRes = await app.request("/upload", {
         method: "POST",
         body: form,
