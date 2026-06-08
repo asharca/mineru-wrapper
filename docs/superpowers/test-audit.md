@@ -43,3 +43,21 @@
 - Frontend integration tests (Phase 3 may add)
 - Playwright E2E (deliberately deferred per spec §5)
 - Refactoring existing tests for DRY — current per-file `registerAndLogin` duplication is acceptable
+
+## Phase 2 Execution Summary (2026-06-08)
+
+| BL | Status | New tests | Commit |
+|---|---|---|---|
+| BL-1 | Closed | 7 (auth.test.ts) | T2 |
+| BL-2 | Closed | 3 (tasks.test.ts) | T3 |
+| BL-3 | Closed | 2 (apikeys.test.ts) | T4 |
+| BL-4 | Closed | 1 (apikeys.test.ts) | T5 |
+| BL-5 | Closed | 2 (tasks.test.ts) | T6 |
+| BL-8 | Closed | 1 (tasks.test.ts) | T7 |
+| BL-11 | Closed | 1 (mineru-failure.test.ts, new file) | T8 |
+| BL-12 | Closed | 1 (auth.test.ts) | T9 |
+| BL-13 | Closed | 1 (auth.test.ts) | T10 |
+| BL-6 | Deferred — product gap (no size limit). Filed as follow-up. |
+| BL-10 | Deferred — error shape sweep low value. |
+
+**Total:** 19 new tests across 4 test files. Suite size: 76 → ~95 server, 12 web.
