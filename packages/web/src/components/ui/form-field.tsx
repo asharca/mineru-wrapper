@@ -11,21 +11,12 @@ interface FormFieldProps {
   className?: string;
 }
 
-export function FormField({
-  label,
-  htmlFor,
-  hint,
-  error,
-  children,
-  className,
-}: FormFieldProps) {
+export function FormField({ label, htmlFor, hint, error, children, className }: FormFieldProps) {
   return (
     <div className={cn("space-y-2", className)}>
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
-      {hint && !error && (
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      )}
+      {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
